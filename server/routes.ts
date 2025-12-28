@@ -10,25 +10,32 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
-  // 1. Setup Auth
-  await setupAuth(app);
-  registerAuthRoutes(app);
+  const authDisabled = process.env.AUTH_DISABLED !== "false";
+  const mockUser = {
+    id: "local-dev",
+    email: "local@vinboard",
+    name: "Local User",
+  };
+
+  if (authDisabled) {
+    app.use((req, _res, next) => {
+      (req as any).user = mockUser;
+      (req as any).session = { userId: mockUser.id };
+      next();
+    });
+
+    app.get("/api/auth/user", (_req, res) => {
+      res.json(mockUser);
+    });
+  } else {
+    await setupAuth(app);
+    registerAuthRoutes(app);
+  }
 
   // 2. Protect all API routes (except auth ones which are handled internally)
   // We can use a middleware for /api/* but we need to exclude /api/login, /api/callback, /api/logout
   // Ideally, apply isAuthenticated to specific routes or groups.
-  const protectedApi = [
-    api.bottles.list.path,
-    api.bottles.get.path.replace(':id', '*'), // Rough match for router middleware if needed, but easier to just add to handlers
-    api.bottles.create.path,
-    api.bottles.update.path.replace(':id', '*'),
-    api.bottles.delete.path.replace(':id', '*'),
-    api.bottles.import.path,
-    api.opened.list.path,
-    api.opened.create.path,
-    api.dashboard.stats.path
-  ];
+  const authGuard = authDisabled ? (_req: any, _res: any, next: any) => next() : isAuthenticated;
 
   // Helper to extract user ID safely
   const getUserId = (req: any) => {
@@ -37,13 +44,13 @@ export async function registerRoutes(
 
   // --- BOTTLES ---
 
-  app.get(api.bottles.list.path, isAuthenticated, async (req, res) => {
+  app.get(api.bottles.list.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     const bottles = await storage.getBottles(userId);
     res.json(bottles);
   });
 
-  app.get(api.bottles.get.path, isAuthenticated, async (req, res) => {
+  app.get(api.bottles.get.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     const bottle = await storage.getBottle(req.params.id, userId);
     if (!bottle) {
@@ -52,7 +59,7 @@ export async function registerRoutes(
     res.json(bottle);
   });
 
-  app.post(api.bottles.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.bottles.create.path, authGuard, async (req, res) => {
     try {
       const userId = getUserId(req);
       const input = api.bottles.create.input.parse(req.body);
@@ -66,7 +73,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch(api.bottles.update.path, isAuthenticated, async (req, res) => {
+  app.patch(api.bottles.update.path, authGuard, async (req, res) => {
     try {
       const userId = getUserId(req);
       const input = api.bottles.update.input.parse(req.body);
@@ -83,7 +90,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete(api.bottles.delete.path, isAuthenticated, async (req, res) => {
+  app.delete(api.bottles.delete.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     await storage.deleteBottle(req.params.id, userId);
     res.status(204).send();
@@ -91,7 +98,7 @@ export async function registerRoutes(
 
   // --- IMPORT ---
 
-  app.post(api.bottles.import.path, isAuthenticated, async (req, res) => {
+  app.post(api.bottles.import.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     let items = req.body;
     
@@ -242,13 +249,13 @@ export async function registerRoutes(
 
   // --- OPENED ---
 
-  app.get(api.opened.list.path, isAuthenticated, async (req, res) => {
+  app.get(api.opened.list.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     const opened = await storage.getOpenedBottles(userId);
     res.json(opened);
   });
 
-  app.post(api.opened.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.opened.create.path, authGuard, async (req, res) => {
     try {
       const userId = getUserId(req);
       const input = api.opened.create.input.parse(req.body);
@@ -264,7 +271,7 @@ export async function registerRoutes(
 
   // --- DASHBOARD ---
 
-  app.get(api.dashboard.stats.path, isAuthenticated, async (req, res) => {
+  app.get(api.dashboard.stats.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     const stats = await storage.getDashboardStats(userId);
     res.json(stats);
