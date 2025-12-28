@@ -1,10 +1,36 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Redirect } from "wouter";
 import { Wine } from "lucide-react";
-import heroImg from "@assets/hero.jpg"; // Placeholder, handled by agent if not present but good practice
+import { useState } from "react";
 
 export default function Auth() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [email, setEmail] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const requestMagicLink = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSending(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || "Failed to send magic link.");
+      }
+      setMessage("Check your email for the login link.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send magic link.";
+      setMessage(message);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -53,29 +79,36 @@ export default function Auth() {
           </div>
 
           <div className="space-y-4">
-            <a 
-              href="/api/login/google"
-              className="group relative w-full flex justify-center py-4 px-4 border border-transparent text-sm font-medium rounded-xl text-primary-foreground bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
-            >
-              Sign in with Google
-            </a>
+            <form onSubmit={requestMagicLink} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground" htmlFor="email">
+                  Email address
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="you@example.com"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isSending}
+                className="group relative w-full flex justify-center py-4 px-4 border border-transparent text-sm font-medium rounded-xl text-primary-foreground bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60"
+              >
+                {isSending ? "Sending link..." : "Send magic link"}
+              </button>
+            </form>
 
-            <a 
-              href="/api/login/github"
-              className="group relative w-full flex justify-center py-4 px-4 border border-primary text-sm font-medium rounded-xl text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
-            >
-              Sign in with GitHub
-            </a>
+            {message ? (
+              <p className="text-sm text-center text-muted-foreground">{message}</p>
+            ) : null}
 
-            <a 
-              href="/api/login/apple"
-              className="group relative w-full flex justify-center py-4 px-4 border border-primary text-sm font-medium rounded-xl text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
-            >
-              Sign in with Apple
-            </a>
-            
             <p className="text-xs text-center text-muted-foreground mt-8">
-              By signing in, you agree to our Terms of Service and Privacy Policy.
+              We’ll email you a one-time sign-in link.
             </p>
           </div>
         </div>
