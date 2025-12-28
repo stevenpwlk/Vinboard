@@ -5,6 +5,7 @@ import { db } from "../../db";
 import { magicLinks } from "@shared/models/auth";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import crypto from "crypto";
+import { sendMagicLink } from "./mailer";
 
 // Register auth-specific routes
 export function registerAuthRoutes(app: Express): void {
@@ -38,9 +39,14 @@ export function registerAuthRoutes(app: Express): void {
 
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     const link = `${baseUrl}/api/auth/verify?token=${token}`;
-    console.log(`Magic link for ${email}: ${link}`);
 
-    res.json({ success: true });
+    try {
+      await sendMagicLink(email, link);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to send magic link:", error);
+      res.status(500).json({ message: "Failed to send magic link" });
+    }
   });
 
   app.get("/api/auth/verify", async (req, res) => {
