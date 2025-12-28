@@ -1,0 +1,203 @@
+Build a public, production-ready web app called “Vinboard” (mobile-first) for managing a personal wine cellar.
+The app must support:
+- One cellar per account (single cellar tied to the logged-in user; no multi-cellar).
+- Import enriched JSON bottles (single object or array). The JSON is already “final enriched” (some fields may be missing).
+- If a bottle already exists, ADD its quantity to the existing quantity (do not overwrite quantity unless user edits manually).
+- Bottle detail pages where users can edit any field later (missing info is OK at import time).
+- A dedicated “Opened bottles history” feature (bottles opened, with date, qty, optional tasting note/rating).
+- Fast filtering/search and a very user-friendly dashboard, optimized for phone use.
+
+TECH STACK (Replit-friendly)
+- Next.js 14+ (App Router) + TypeScript
+- TailwindCSS + shadcn/ui components for modern UI
+- Prisma ORM
+- PostgreSQL database (use Replit Postgres or a managed Postgres; configure via DATABASE_URL)
+- Authentication: NextAuth.js (email/password OR magic link) OR Clerk (choose simplest stable approach on Replit).
+- Server actions or API routes for CRUD.
+
+DATA MODEL (Prisma)
+User:
+- id, email, passwordHash (if using credentials), createdAt
+
+Bottle (unique per user by external_key):
+- id (uuid)
+- userId (fk)
+- external_key (string)
+- producer (string, nullable)
+- wine (string, nullable)
+- vintage (string, nullable)
+- country, region, appellation (nullable)
+- color (enum/string: red/white/rose/sparkling/unknown)
+- type (enum/string: still/sparkling/fortified/sweet/unknown)
+- size_ml (int nullable)
+- grapes (string nullable)
+- abv (float nullable)
+- barcode (string nullable)
+- window_start_year, peak_start_year, peak_end_year, window_end_year (int nullable)
+- window_source (string, default "unknown")
+- confidence (enum/string: high/medium/low)
+- serving_temp_c (float nullable)
+- decanting (string nullable)
+- price_min_eur, price_typical_eur, price_max_eur (float nullable)
+- price_updated_at (date/timestamp nullable)
+- price_sources_json (json nullable)  // array of urls
+- sources_json (json nullable)        // array of urls
+- notes (text nullable)
+- quantity (int default 1)
+- location (string nullable)
+- bin (string nullable)
+- createdAt, updatedAt
+
+OpenedBottle (history log):
+- id (uuid)
+- userId
+- bottleId (nullable if bottle deleted; keep reference fields too)
+- external_key (string)
+- producer, wine, vintage (snapshot strings)
+- opened_at (timestamp)
+- quantity_opened (int default 1)
+- tasting_notes (text nullable)
+- rating_100 (int nullable) or rating_5 (int nullable)
+- createdAt
+
+CONSTRAINTS
+- Unique index: (userId, external_key) on Bottle.
+- The import must UPSERT by (userId, external_key).
+- When importing existing bottle:
+  - quantity = quantity + incoming.quantity (incoming default 1)
+  - For other fields: do NOT overwrite existing non-null values with null.
+  - If incoming has a non-null value, update it (but never clobber better data with null).
+- If window fields provided: validate coherence start <= peak_start <= peak_end <= end; if inconsistent, keep values but mark confidence low and add warning to import result.
+
+IMPORT JSON CONTRACT (input)
+The app must accept JSON like:
+{
+  "external_key": "ean:1234567890123",
+  "producer": "Domaine Exemple",
+  "wine": "Cuvée Les Pierres",
+  "vintage": "2022",
+  "country": "France",
+  "region": "Bourgogne",
+  "appellation": "Bourgogne Pinot Noir",
+  "color": "red",
+  "type": "still",
+  "size_ml": 750,
+  "grapes": "Pinot Noir (100%)",
+  "abv": 13.0,
+  "barcode": "1234567890123",
+  "window_start_year": 2024,
+  "peak_start_year": 2026,
+  "peak_end_year": 2028,
+  "window_end_year": 2030,
+  "window_source": "producer_tech_sheet",
+  "confidence": "high",
+  "serving_temp_c": 16,
+  "decanting": "Optional (30 min)",
+  "price_min_eur": 14.90,
+  "price_typical_eur": 16.90,
+  "price_max_eur": 18.50,
+  "price_checked_date": "2025-12-28",
+  "price_sources": ["https://example.com/shop1", "https://example.com/shop2"],
+  "notes": "…",
+  "sources": ["https://example.com/p1.pdf", "https://example.com/shop1"]
+}
+Alias support required:
+- price_checked_date => price_updated_at
+- price_sources => price_sources_json
+- sources => sources_json
+grapes can be string or array<string>.
+
+UX / UI (mobile-first, very simple)
+NAV:
+- Bottom navigation on mobile: Dashboard, Bottles, Import, Opened, Settings
+- Desktop can have top nav.
+
+Dashboard page:
+- Large counters cards (tap to filter):
+  - Open now (status: ready/peak/drink fast)
+  - Drink soon (start within 1 year)
+  - Wait
+  - Possibly past
+  - To verify (missing windows)
+- After counters, show small lists:
+  - Open now (top 10)
+  - Possibly past (top 10)
+  - Drink soon (top 10)
+  - To verify (top 10)
+- Each list item must be a compact mobile card with producer, wine, vintage, qty, window, peak.
+
+Status logic (computed):
+- If no window: “To verify”
+- If todayYear < window_start: “Wait”
+- If peak_start<=todayYear<=peak_end: “At peak”
+- Else if todayYear <= window_end:
+    - If window_end - todayYear <= 1 => “Drink fast”
+    - Else “Ready”
+- Else “Possibly past”
+
+Bottles list page:
+- Search bar
+- Quick filter chips: color (red/white/rose/sparkling), sweetness (dry/sweet inferred from text), status, confidence
+- Advanced filters: region/country, window_source, location
+- Sorting: by status priority, by window_end asc, by producer/wine
+- List must be card-based (no large tables on mobile).
+
+Bottle detail page:
+- Prominent identity: producer, wine, vintage, qty
+- Status banner (computed)
+- Editable fields with clean sections:
+  - Identity (producer/wine/vintage/size/ean)
+  - Window & peak + confidence + window_source
+  - Service (serving temp, decanting)
+  - Price (min/typical/max, updated date, price sources)
+  - Notes
+  - Sources list (clickable)
+  - Location/bin
+- Actions:
+  - “Open bottle” (decrement quantity by 1 or choose quantity; logs to Opened history)
+  - “Edit” (inline edit)
+  - “Delete” (confirm)
+
+Opened bottles history page:
+- List of opened events (date, bottle snapshot, qty, rating)
+- Ability to add tasting notes / rating after opening
+- Filter by producer, year, rating
+- Optional stats: total opened this year
+
+Import page (single simple flow):
+- A big textarea to paste JSON (object or array)
+- Import button
+- Show results summary:
+  - imported count, updated count, errors
+- For each error: show item external_key and reason
+
+Export:
+- Provide export endpoints or UI:
+  - Export JSON
+  - Export CSV
+  - Export database backup (optional)
+
+SECURITY / MULTI-TENANCY
+- Every query must be scoped to logged-in userId.
+- No user can access other users’ bottles by id (authorize all routes).
+
+IMPLEMENTATION DETAILS
+- Use Prisma upsert with compound unique key (userId, external_key).
+- For quantity addition:
+  - on update: quantity: { increment: incomingQty }
+- For non-null merges:
+  - update only fields provided (non-null).
+- JSON fields stored as JSON arrays (sources_json, price_sources_json).
+- Provide a TypeScript normalization function that:
+  - accepts alias fields (price_checked_date -> price_updated_at)
+  - ensures arrays are arrays
+  - parses numbers safely
+  - derives peak from start/end if missing
+
+DELIVERABLES
+- A complete Next.js app with pages, components, Prisma schema, migrations, and seed example.
+- Clear README with:
+  - setup steps on Replit
+  - env vars required
+  - how to paste/import JSON
+  - how to run locally
