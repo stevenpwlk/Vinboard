@@ -66,6 +66,13 @@ export default function Auth() {
             >
               Sign in with GitHub
             </a>
+
+            <a 
+              href="/api/login/apple"
+              className="group relative w-full flex justify-center py-4 px-4 border border-primary text-sm font-medium rounded-xl text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
+            >
+              Sign in with Apple
+            </a>
             
             <p className="text-xs text-center text-muted-foreground mt-8">
               By signing in, you agree to our Terms of Service and Privacy Policy.

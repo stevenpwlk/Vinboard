@@ -42,7 +42,7 @@ async function upsertUser(user: {
   });
 }
 
-type ProviderName = "google" | "github";
+type ProviderName = "google" | "github" | "apple";
 
 type OAuthProviderConfig = {
   clientId: string;
@@ -68,17 +68,32 @@ function getProviderConfig(provider: ProviderName): OAuthProviderConfig | null {
     };
   }
 
-  if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
+  if (provider === "github") {
+    if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
+      return null;
+    }
+
+    return {
+      clientId: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      authorizeUrl: "https://github.com/login/oauth/authorize",
+      tokenUrl: "https://github.com/login/oauth/access_token",
+      scope: "user:email",
+      userInfoUrl: "https://api.github.com/user",
+    };
+  }
+
+  if (!process.env.APPLE_CLIENT_ID || !process.env.APPLE_CLIENT_SECRET) {
     return null;
   }
 
   return {
-    clientId: process.env.GITHUB_CLIENT_ID,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    authorizeUrl: "https://github.com/login/oauth/authorize",
-    tokenUrl: "https://github.com/login/oauth/access_token",
-    scope: "user:email",
-    userInfoUrl: "https://api.github.com/user",
+    clientId: process.env.APPLE_CLIENT_ID,
+    clientSecret: process.env.APPLE_CLIENT_SECRET,
+    authorizeUrl: "https://appleid.apple.com/auth/authorize",
+    tokenUrl: "https://appleid.apple.com/auth/token",
+    scope: "name email",
+    userInfoUrl: "https://appleid.apple.com/auth/userinfo",
   };
 }
 
@@ -147,12 +162,31 @@ async function fetchGitHubUser(accessToken: string) {
   };
 }
 
+async function fetchAppleUser(accessToken: string) {
+  const response = await fetch("https://appleid.apple.com/auth/userinfo", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch Apple user.");
+  }
+  const profile = await response.json();
+  return {
+    id: `apple:${profile.sub}`,
+    email: profile.email ?? null,
+    firstName: profile.name?.firstName ?? null,
+    lastName: profile.name?.lastName ?? null,
+    profileImageUrl: null,
+  };
+}
+
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
 
   const startLogin = (provider: ProviderName, req: Request, res: Response) => {
-    if (!["google", "github"].includes(provider)) {
+    if (!["google", "github", "apple"].includes(provider)) {
       res.status(400).json({ message: "Unsupported provider" });
       return;
     }
@@ -172,6 +206,9 @@ export async function setupAuth(app: Express) {
       scope: config.scope,
       state,
     });
+    if (provider === "apple") {
+      params.set("response_mode", "query");
+    }
     res.redirect(`${config.authorizeUrl}?${params.toString()}`);
   };
 
@@ -180,13 +217,17 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/login", (req, res) => {
-    const provider = process.env.GOOGLE_CLIENT_ID ? "google" : "github";
+    const provider = process.env.GOOGLE_CLIENT_ID
+      ? "google"
+      : process.env.GITHUB_CLIENT_ID
+      ? "github"
+      : "apple";
     startLogin(provider, req, res);
   });
 
   app.get("/api/callback/:provider", async (req, res) => {
     const provider = req.params.provider as ProviderName;
-    if (!["google", "github"].includes(provider)) {
+    if (!["google", "github", "apple"].includes(provider)) {
       res.status(400).json({ message: "Unsupported provider" });
       return;
     }
@@ -235,7 +276,9 @@ export async function setupAuth(app: Express) {
       const user =
         provider === "google"
           ? await fetchGoogleUser(accessToken)
-          : await fetchGitHubUser(accessToken);
+          : provider === "github"
+          ? await fetchGitHubUser(accessToken)
+          : await fetchAppleUser(accessToken);
       await upsertUser(user);
       (req.session as any).userId = user.id;
       delete (req.session as any).oauthState;
