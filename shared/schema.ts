@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, json, doublePrecision, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, json, jsonb, doublePrecision, date } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -39,6 +39,7 @@ export const bottles = pgTable("bottles", {
   priceUpdatedAt: timestamp("price_updated_at"),
   priceSourcesJson: json("price_sources_json"), // array of strings
   sourcesJson: json("sources_json"), // array of strings
+  legacyJson: jsonb("legacy_json").$type<Record<string, any>>(),
   notes: text("notes"),
   quantity: integer("quantity").default(1),
   location: text("location"),
@@ -129,6 +130,8 @@ export const importBottleSchema = z.object({
   price_typical_eur: z.number().optional(),
   price_max_eur: z.number().optional(),
   price_checked_date: z.string().optional(), // Alias for price_updated_at
+  price_updated_at: z.string().optional(),
+  price_checked_at: z.string().optional(),
   price_sources: z.array(z.string()).optional(), // Alias for price_sources_json
   sources: z.array(z.string()).optional(), // Alias for sources_json
   notes: z.string().optional(),
