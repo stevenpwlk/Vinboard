@@ -32,7 +32,7 @@ export async function registerRoutes(
 
   // Helper to extract user ID safely
   const getUserId = (req: any) => {
-    return req.user?.claims?.sub;
+    return req.user?.id;
   };
 
   // --- BOTTLES ---
