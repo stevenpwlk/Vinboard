@@ -3,6 +3,32 @@ import { Redirect } from "wouter";
 
 export default function Auth() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [email, setEmail] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const requestMagicLink = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSending(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || "Failed to send magic link.");
+      }
+      setMessage("Check your email for the login link.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send magic link.";
+      setMessage(message);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   if (isLoading) {
     return (
