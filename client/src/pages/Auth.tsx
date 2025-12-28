@@ -54,10 +54,24 @@ export default function Auth() {
 
           <div className="space-y-4">
             <a 
-              href="/api/login"
+              href="/api/login/google"
               className="group relative w-full flex justify-center py-4 px-4 border border-transparent text-sm font-medium rounded-xl text-primary-foreground bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
             >
-              Sign in with Replit
+              Sign in with Google
+            </a>
+
+            <a 
+              href="/api/login/github"
+              className="group relative w-full flex justify-center py-4 px-4 border border-primary text-sm font-medium rounded-xl text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
+            >
+              Sign in with GitHub
+            </a>
+
+            <a 
+              href="/api/login/apple"
+              className="group relative w-full flex justify-center py-4 px-4 border border-primary text-sm font-medium rounded-xl text-primary hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
+            >
+              Sign in with Apple
             </a>
             
             <p className="text-xs text-center text-muted-foreground mt-8">
