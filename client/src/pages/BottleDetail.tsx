@@ -7,6 +7,7 @@ import { ArrowLeft, Minus, Plus, Wine, Calendar, Tag, MapPin, DollarSign, Info }
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 // Reusing status logic again - simplified
 const getStatus = (bottle: any): string => {
@@ -222,6 +223,23 @@ export default function BottleDetail() {
           </section>
         </div>
       </div>
+
+      <section className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+        <Accordion type="single" collapsible>
+          <AccordionItem value="legacy">
+            <AccordionTrigger>Legacy data</AccordionTrigger>
+            <AccordionContent>
+              {bottle.legacyJson ? (
+                <pre className="text-xs whitespace-pre-wrap rounded-lg bg-muted/40 p-4 border border-border/60">
+                  {JSON.stringify(bottle.legacyJson, null, 2)}
+                </pre>
+              ) : (
+                <p className="text-sm text-muted-foreground">No legacy data available.</p>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </section>
     </div>
   );
 }

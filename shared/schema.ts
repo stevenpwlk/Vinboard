@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, json, doublePrecision, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, json, jsonb, doublePrecision, date } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -39,6 +39,7 @@ export const bottles = pgTable("bottles", {
   priceUpdatedAt: timestamp("price_updated_at"),
   priceSourcesJson: json("price_sources_json"), // array of strings
   sourcesJson: json("sources_json"), // array of strings
+  legacyJson: jsonb("legacy_json").$type<Record<string, any>>(),
   notes: text("notes"),
   quantity: integer("quantity").default(1),
   location: text("location"),
@@ -103,38 +104,103 @@ export type UpdateOpenedBottleRequest = Partial<InsertOpenedBottle>;
 export type BottleStatus = "open_now" | "drink_soon" | "wait" | "possibly_past" | "to_verify";
 
 // Import Schema
+const nullishString = z.preprocess((value) => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  const str = String(value).trim();
+  if (!str || str.toLowerCase() === "nan") {
+    return undefined;
+  }
+  return str;
+}, z.string().optional());
+
+const parseNumber = (value: string) => {
+  const normalized = value.replace("%", "").replace(",", ".").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const nullishNumber = z.preprocess((value) => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const parsed = parseNumber(value);
+    return parsed;
+  }
+  return undefined;
+}, z.number().optional());
+
+const nullishInt = z.preprocess((value) => {
+  const parsed = nullishNumber.parse(value);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  return Math.trunc(parsed);
+}, z.number().int().optional());
+
+const nullishStringArray = z.preprocess((value) => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry)).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry) => String(entry)).filter(Boolean);
+      }
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}, z.array(z.string()).optional());
+
 export const importBottleSchema = z.object({
   external_key: z.string(),
-  producer: z.string().optional(),
-  wine: z.string().optional(),
-  vintage: z.string().optional(),
-  country: z.string().optional(),
-  region: z.string().optional(),
-  appellation: z.string().optional(),
-  color: z.string().optional(),
-  type: z.string().optional(),
-  size_ml: z.number().optional(),
-  grapes: z.union([z.string(), z.array(z.string())]).optional(),
-  abv: z.number().optional(),
-  barcode: z.string().optional(),
-  window_start_year: z.number().optional(),
-  peak_start_year: z.number().optional(),
-  peak_end_year: z.number().optional(),
-  window_end_year: z.number().optional(),
-  window_source: z.string().optional(),
-  confidence: z.string().optional(),
-  serving_temp_c: z.number().optional(),
-  decanting: z.string().optional(),
-  price_min_eur: z.number().optional(),
-  price_typical_eur: z.number().optional(),
-  price_max_eur: z.number().optional(),
-  price_checked_date: z.string().optional(), // Alias for price_updated_at
-  price_sources: z.array(z.string()).optional(), // Alias for price_sources_json
-  sources: z.array(z.string()).optional(), // Alias for sources_json
-  notes: z.string().optional(),
-  quantity: z.number().optional().default(1),
-  location: z.string().optional(),
-  bin: z.string().optional(),
+  producer: nullishString,
+  wine: nullishString,
+  vintage: nullishString,
+  country: nullishString,
+  region: nullishString,
+  appellation: nullishString,
+  color: nullishString,
+  type: nullishString,
+  size_ml: nullishInt,
+  grapes: z.union([nullishString, nullishStringArray]).optional(),
+  abv: nullishNumber,
+  barcode: nullishString,
+  window_start_year: nullishInt,
+  peak_start_year: nullishInt,
+  peak_end_year: nullishInt,
+  window_end_year: nullishInt,
+  window_source: nullishString,
+  confidence: nullishString,
+  serving_temp_c: nullishNumber,
+  decanting: nullishString,
+  price_min_eur: nullishNumber,
+  price_typical_eur: nullishNumber,
+  price_max_eur: nullishNumber,
+  price_checked_date: nullishString, // Alias for price_updated_at
+  price_updated_at: nullishString,
+  price_checked_at: nullishString,
+  price_sources: nullishStringArray, // Alias for price_sources_json
+  sources: nullishStringArray, // Alias for sources_json
+  notes: nullishString,
+  quantity: nullishInt.default(1),
+  location: nullishString,
+  bin: nullishString,
 });
 
 export type ImportBottleInput = z.infer<typeof importBottleSchema>;
