@@ -30,7 +30,6 @@ function normalizeSources(value: unknown): string[] {
 }
 
 export function normalizeLegacyImport(item: Record<string, any>) {
-  const legacy = item;
   const sourcesRaw = item.sources ?? item.sources_json;
   const priceSourcesRaw = item.price_sources ?? item.price_sources_json;
   const normalizedSources = normalizeSources(sourcesRaw);
@@ -38,7 +37,12 @@ export function normalizeLegacyImport(item: Record<string, any>) {
   const priceUpdatedAt = item.price_updated_at ?? item.price_checked_at ?? item.price_checked_date;
 
   return {
-    legacy,
+    normalizedItem: {
+      ...item,
+      sources: normalizedSources.length ? normalizedSources : item.sources,
+      price_sources: normalizedPriceSources.length ? normalizedPriceSources : item.price_sources,
+      price_updated_at: priceUpdatedAt ?? item.price_updated_at,
+    },
     normalizedSources,
     normalizedPriceSources,
     priceUpdatedAt,

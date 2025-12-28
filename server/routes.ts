@@ -102,7 +102,11 @@ export async function registerRoutes(
   app.post(api.bottles.import.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     let items = req.body;
-    
+
+    if (items && Array.isArray(items.bottles)) {
+      items = items.bottles;
+    }
+
     // Normalize to array
     if (!Array.isArray(items)) {
       items = [items];
@@ -116,19 +120,32 @@ export async function registerRoutes(
 
     for (const item of items) {
       try {
-        const { legacy, normalizedSources, normalizedPriceSources, priceUpdatedAt } =
-          normalizeLegacyImport(item);
+        let legacyAll: Record<string, any>;
+        try {
+          legacyAll = JSON.parse(JSON.stringify(item));
+        } catch {
+          legacyAll = { ...item };
+        }
+        const { normalizedItem } = normalizeLegacyImport(item);
 
         // Pre-processing / Alias mapping
         const processed = {
-          ...item,
-          price_updated_at: priceUpdatedAt,
-          price_sources: normalizedPriceSources,
-          sources: normalizedSources,
-          grapes: Array.isArray(item.grapes) ? item.grapes.join(", ") : item.grapes,
+          ...normalizedItem,
+          grapes: Array.isArray(normalizedItem.grapes)
+            ? normalizedItem.grapes.join(", ")
+            : normalizedItem.grapes,
+          legacy_json: legacyAll,
         };
 
-        const validated = importBottleSchema.parse(processed);
+        const validatedResult = importBottleSchema.safeParse(processed);
+        if (!validatedResult.success) {
+          results.errors.push({
+            externalKey: item.external_key || "unknown",
+            reason: validatedResult.error.errors[0]?.message || "Invalid data",
+          });
+          continue;
+        }
+        const validated = validatedResult.data;
 
         // Check if exists
         const existing = await storage.getBottleByExternalKey(validated.external_key, userId);
@@ -175,7 +192,7 @@ export async function registerRoutes(
              priceUpdatedAt: v.price_updated_at ? new Date(v.price_updated_at) : undefined,
              priceSourcesJson: v.price_sources,
              sourcesJson: v.sources,
-             legacyJson: legacy,
+             legacyJson: legacyAll,
              notes: v.notes,
              quantity: newQuantity, // Explicitly calculated
              location: v.location,
@@ -230,7 +247,7 @@ export async function registerRoutes(
              priceUpdatedAt: v.price_updated_at ? new Date(v.price_updated_at) : undefined,
              priceSourcesJson: v.price_sources,
              sourcesJson: v.sources,
-             legacyJson: legacy,
+             legacyJson: legacyAll,
              notes: v.notes,
              quantity: v.quantity || 1,
              location: v.location,
