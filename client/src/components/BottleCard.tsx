@@ -3,7 +3,8 @@ import { Link } from "wouter";
 import { WineIcon } from "./WineIcon";
 import { StatusBadge } from "./StatusBadge";
 import { cn } from "@/lib/utils";
-import { MapPin, Calendar } from "lucide-react";
+import { MapPin, Calendar, Star } from "lucide-react";
+import { computeBottleStatus } from "@shared/status";
 
 interface BottleCardProps {
   bottle: Bottle;
@@ -11,6 +12,10 @@ interface BottleCardProps {
 }
 
 export function BottleCard({ bottle, status }: BottleCardProps) {
+  const computed = computeBottleStatus(bottle);
+  const windowLabel = (bottle as any).windowLabel || computed.windowLabel;
+  const peakLabel = (bottle as any).peakLabel || computed.peakLabel;
+
   return (
     <Link href={`/bottles/${bottle.id}`} className="block group">
       <div className="wine-card p-4 relative h-full flex flex-col hover:-translate-y-1 transition-transform">
@@ -52,13 +57,19 @@ export function BottleCard({ bottle, status }: BottleCardProps) {
           
           <div className="flex items-center justify-between pt-3 border-t border-border/50">
             <StatusBadge status={status} />
-            {(bottle.windowStartYear || bottle.windowEndYear) && (
+            {windowLabel ? (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                 <Calendar className="w-3 h-3" />
-                <span>{bottle.windowStartYear || "?"} - {bottle.windowEndYear || "?"}</span>
+                <span>{windowLabel}</span>
               </div>
-            )}
+            ) : null}
           </div>
+          {peakLabel ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+              <Star className="w-3 h-3" />
+              <span>{peakLabel}</span>
+            </div>
+          ) : null}
         </div>
       </div>
     </Link>

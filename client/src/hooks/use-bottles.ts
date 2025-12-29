@@ -3,10 +3,13 @@ import { api, buildUrl, type InsertBottle, type ImportBottleInput } from "@share
 import { z } from "zod";
 
 export type BottlesFilters = {
-  search?: string;
-  color?: string;
+  q?: string;
   status?: string;
   confidence?: string;
+  window_source?: string;
+  color?: string;
+  sweetness?: string;
+  location?: string;
   sort?: string;
 };
 
@@ -57,12 +60,13 @@ export function useBottle(id: string) {
 export function useCreateBottle() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: InsertBottle) => {
-      const validated = api.bottles.create.input.parse(data);
+    mutationFn: async (data: InsertBottle & { addToExisting?: boolean }) => {
+      const { addToExisting, ...payload } = data as { addToExisting?: boolean };
+      const validated = api.bottles.create.input.parse(payload);
       const res = await fetch(api.bottles.create.path, {
         method: api.bottles.create.method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(validated),
+        body: JSON.stringify({ ...validated, addToExisting }),
         credentials: "include",
       });
       
@@ -120,6 +124,9 @@ export function useDeleteBottle() {
       });
       
       if (!res.ok) throw new Error("Failed to delete bottle");
+      if (res.status !== 204) {
+        await res.json().catch(() => null);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.bottles.list.path] });

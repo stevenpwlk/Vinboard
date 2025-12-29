@@ -6,6 +6,8 @@ import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { importBottleSchema, type InsertBottle } from "@shared/schema";
 import { normalizeLegacyImport } from "./import/legacy";
+import { computeBottleStatus } from "@shared/status";
+import crypto from "crypto";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -47,7 +49,47 @@ export async function registerRoutes(
 
   app.get(api.bottles.list.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
-    const bottles = await storage.getBottles(userId);
+    const filters = {
+      q: req.query.q as string | undefined,
+      color: req.query.color as string | undefined,
+      confidence: req.query.confidence as string | undefined,
+      window_source: req.query.window_source as string | undefined,
+      location: req.query.location as string | undefined,
+    };
+    const statusFilter = req.query.status as string | undefined;
+    const sweetnessFilter = req.query.sweetness as string | undefined;
+
+    let bottles = await storage.getBottles(userId, filters);
+    const nowYear = new Date().getFullYear();
+    bottles = bottles.map((bottle) => {
+      const computed = computeBottleStatus(bottle, nowYear);
+      return {
+        ...bottle,
+        status: computed.status,
+        statusReason: computed.reason,
+        windowLabel: computed.windowLabel,
+        peakLabel: computed.peakLabel,
+      };
+    });
+
+    if (statusFilter) {
+      const readyStatuses = ["ready", "ready_before_peak", "ready_after_peak"];
+      bottles = bottles.filter((bottle: any) => {
+        if (statusFilter === "ready") {
+          return readyStatuses.includes(bottle.status);
+        }
+        return bottle.status === statusFilter;
+      });
+    }
+
+    if (sweetnessFilter) {
+      bottles = bottles.filter((bottle: any) => {
+        const legacySweetness = bottle.legacyJson?.sweetness;
+        const directSweetness = bottle.sweetness;
+        return (legacySweetness || directSweetness) === sweetnessFilter;
+      });
+    }
+
     res.json(bottles);
   });
 
@@ -57,13 +99,53 @@ export async function registerRoutes(
     if (!bottle) {
       return res.status(404).json({ message: "Bottle not found" });
     }
-    res.json(bottle);
+    const computed = computeBottleStatus(bottle);
+    res.json({
+      ...bottle,
+      status: computed.status,
+      statusReason: computed.reason,
+      windowLabel: computed.windowLabel,
+      peakLabel: computed.peakLabel,
+    });
   });
 
   app.post(api.bottles.create.path, authGuard, async (req, res) => {
     try {
       const userId = getUserId(req);
-      const input = api.bottles.create.input.parse(req.body);
+      const addToExisting = Boolean(req.body?.addToExisting);
+      const externalKey =
+        req.body?.externalKey ||
+        req.body?.external_key ||
+        `manual_${crypto
+          .createHash("sha1")
+          .update(
+            [
+              req.body?.producer,
+              req.body?.wine,
+              req.body?.vintage,
+              req.body?.sizeMl,
+              req.body?.size_ml,
+            ]
+              .filter(Boolean)
+              .join("|")
+          )
+          .digest("hex")
+          .slice(0, 10)}`;
+      const input = api.bottles.create.input.parse({
+        ...req.body,
+        externalKey,
+      });
+
+      if (addToExisting) {
+        const existing = await storage.getBottleByExternalKey(input.externalKey, userId);
+        if (existing) {
+          const updated = await storage.updateBottle(existing.id, userId, {
+            quantity: (existing.quantity || 0) + (input.quantity || 1),
+          });
+          return res.status(200).json(updated);
+        }
+      }
+
       const bottle = await storage.createBottle({ ...input, userId });
       res.status(201).json(bottle);
     } catch (err) {
@@ -93,8 +175,22 @@ export async function registerRoutes(
 
   app.delete(api.bottles.delete.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
+    const existing = await storage.getBottle(req.params.id, userId);
+    if (!existing) {
+      return res.status(404).json({ message: "Bottle not found" });
+    }
     await storage.deleteBottle(req.params.id, userId);
-    res.status(204).send();
+    res.json({ success: true });
+  });
+
+  app.post("/api/bottles/:id/delete", authGuard, async (req, res) => {
+    const userId = getUserId(req);
+    const existing = await storage.getBottle(req.params.id, userId);
+    if (!existing) {
+      return res.status(404).json({ message: "Bottle not found" });
+    }
+    await storage.deleteBottle(req.params.id, userId);
+    res.json({ success: true });
   });
 
   // --- IMPORT ---

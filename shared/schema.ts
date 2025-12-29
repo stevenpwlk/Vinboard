@@ -101,7 +101,15 @@ export type UpdateBottleRequest = Partial<InsertBottle>;
 export type CreateOpenedBottleRequest = InsertOpenedBottle;
 export type UpdateOpenedBottleRequest = Partial<InsertOpenedBottle>;
 
-export type BottleStatus = "open_now" | "drink_soon" | "wait" | "possibly_past" | "to_verify";
+export type BottleStatus =
+  | "to_verify"
+  | "wait"
+  | "peak"
+  | "ready_before_peak"
+  | "ready_after_peak"
+  | "ready"
+  | "drink_soon"
+  | "possibly_past";
 
 // Import Schema
 const nullishString = z.preprocess((value) => {
@@ -213,6 +221,7 @@ export interface ImportResponse {
 
 export interface DashboardStats {
   openNow: number;
+  peak: number;
   drinkSoon: number;
   wait: number;
   possiblyPast: number;
