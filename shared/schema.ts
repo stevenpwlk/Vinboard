@@ -214,6 +214,11 @@ export const importBottleSchema = z.object({
 export type ImportBottleInput = z.infer<typeof importBottleSchema>;
 
 export interface ImportResponse {
+  mode: "merge" | "sync";
+  created: number;
+  updated: number;
+  skipped: number;
+  errorsCount: number;
   importedCount: number;
   updatedCount: number;
   errors: { externalKey: string; reason: string }[];

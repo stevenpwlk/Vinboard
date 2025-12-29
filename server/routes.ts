@@ -6,6 +6,7 @@ import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { importBottleSchema, type InsertBottle, type Bottle, type OpenedBottle } from "@shared/schema";
 import { normalizeLegacyImport } from "./import/legacy";
+import { getCreateQuantity, getMergeQuantity, getSyncQuantityUpdate, type ImportMode } from "./import/mode";
 import { computeBottleStatus } from "@shared/status";
 import {
   normalizeColor,
@@ -343,11 +344,40 @@ export async function registerRoutes(
 
   // --- IMPORT ---
 
+  const detectImportMode = (payload: unknown): ImportMode => {
+    if (!payload || Array.isArray(payload) || typeof payload !== "object") {
+      return "merge";
+    }
+    const candidate = payload as { schema_version?: unknown; bottles?: unknown };
+    if (candidate.schema_version !== undefined && Array.isArray(candidate.bottles)) {
+      return "sync";
+    }
+    return "merge";
+  };
+
+  const shouldKeepValue = (value: unknown) => {
+    if (value === null || value === undefined) {
+      return false;
+    }
+    if (typeof value === "string" && value.trim() === "") {
+      return false;
+    }
+    return true;
+  };
+
   app.post(api.bottles.import.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
-    let items = req.body;
+    const payload = req.body;
+    const requestedMode = typeof req.query.mode === "string" ? req.query.mode : undefined;
+    if (requestedMode && requestedMode !== "merge" && requestedMode !== "sync") {
+      return res.status(400).json({ message: "Invalid import mode" });
+    }
+    const detectedMode = detectImportMode(payload);
+    const mode: ImportMode = (requestedMode as ImportMode) || detectedMode;
 
-    if (items && Array.isArray(items.bottles)) {
+    let items = payload;
+
+    if (items && !Array.isArray(items) && typeof items === "object" && Array.isArray(items.bottles)) {
       items = items.bottles;
     }
 
@@ -357,9 +387,14 @@ export async function registerRoutes(
     }
 
     const results = {
+      mode,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errorsCount: 0,
       importedCount: 0,
       updatedCount: 0,
-      errors: [] as { externalKey: string; reason: string }[]
+      errors: [] as { externalKey: string; reason: string }[],
     };
 
     for (const item of items) {
@@ -391,12 +426,53 @@ export async function registerRoutes(
         }
         const validated = validatedResult.data;
 
+        const quantityResult = importBottleSchema.shape.quantity.safeParse(normalizedItem.quantity);
+        const hasIncomingQuantity =
+          Object.prototype.hasOwnProperty.call(normalizedItem, "quantity") &&
+          quantityResult.success &&
+          quantityResult.data !== undefined;
+        const incomingQuantity = quantityResult.success ? quantityResult.data : undefined;
+
         // Check if exists
         const existing = await storage.getBottleByExternalKey(validated.external_key, userId);
 
+        const mapBaseToInsert = (v: any): Partial<InsertBottle> => ({
+          externalKey: v.external_key,
+          producer: v.producer,
+          wine: v.wine,
+          vintage: v.vintage,
+          country: v.country,
+          region: v.region,
+          appellation: v.appellation,
+          color: normalizeColor(v.color),
+          type: normalizeType(v.type),
+          sizeMl: v.size_ml,
+          grapes: v.grapes,
+          abv: v.abv,
+          barcode: v.barcode,
+          windowStartYear: v.window_start_year,
+          peakStartYear: v.peak_start_year,
+          peakEndYear: v.peak_end_year,
+          windowEndYear: v.window_end_year,
+          windowSource: normalizeWindowSource(v.window_source),
+          confidence: normalizeConfidence(v.confidence),
+          servingTempC: v.serving_temp_c,
+          decanting: v.decanting,
+          priceMinEur: v.price_min_eur,
+          priceTypicalEur: v.price_typical_eur,
+          priceMaxEur: v.price_max_eur,
+          priceUpdatedAt: v.price_updated_at ? new Date(v.price_updated_at) : undefined,
+          priceSourcesJson: v.price_sources,
+          sourcesJson: v.sources,
+          legacyJson: legacyAll,
+          notes: v.notes,
+          location: normalizeLocation(v.location),
+          bin: v.bin,
+        });
+
         if (existing) {
           // Update / Merge
-          const newQuantity = (existing.quantity || 0) + (validated.quantity || 1);
+          const newQuantity = getMergeQuantity(existing.quantity, validated.quantity);
           
           // Merge logic: only update fields that are present in incoming and null in existing?
           // Prompt says: "For other fields: do NOT overwrite existing non-null values with null. If incoming has a non-null value, update it"
@@ -408,97 +484,51 @@ export async function registerRoutes(
           // Wait, importBottleSchema uses snake_case keys. Drizzle schema uses camelCase keys with snake_case DB columns.
           // We need to map validated (snake_case) to InsertBottle (camelCase).
           
-          const mapToInsert = (v: any): Partial<InsertBottle> => ({
-             externalKey: v.external_key,
-             producer: v.producer,
-             wine: v.wine,
-             vintage: v.vintage,
-             country: v.country,
-             region: v.region,
-             appellation: v.appellation,
-             color: normalizeColor(v.color),
-             type: normalizeType(v.type),
-             sizeMl: v.size_ml,
-             grapes: v.grapes,
-             abv: v.abv,
-             barcode: v.barcode,
-             windowStartYear: v.window_start_year,
-             peakStartYear: v.peak_start_year,
-             peakEndYear: v.peak_end_year,
-             windowEndYear: v.window_end_year,
-             windowSource: normalizeWindowSource(v.window_source),
-             confidence: normalizeConfidence(v.confidence),
-             servingTempC: v.serving_temp_c,
-             decanting: v.decanting,
-             priceMinEur: v.price_min_eur,
-             priceTypicalEur: v.price_typical_eur,
-             priceMaxEur: v.price_max_eur,
-             priceUpdatedAt: v.price_updated_at ? new Date(v.price_updated_at) : undefined,
-             priceSourcesJson: v.price_sources,
-             sourcesJson: v.sources,
-             legacyJson: legacyAll,
-             notes: v.notes,
-             quantity: newQuantity, // Explicitly calculated
-             location: normalizeLocation(v.location),
-             bin: v.bin
-          });
-
-          const mapped = mapToInsert(validated);
+          const mapped = {
+            ...mapBaseToInsert(validated),
+            quantity: mode === "merge" ? newQuantity : undefined,
+          };
           
           // Construct updates: Incoming non-null overrides.
           // Since mapped has everything from validated, just filtering out undefined/null from mapped
           // will give us the "incoming non-nulls".
           // BUT prompt says: "If incoming has a non-null value, update it (but never clobber better data with null)."
           
-          Object.keys(mapped).forEach(key => {
-             const val = (mapped as any)[key];
-             if (val !== undefined && val !== null) {
-               updates[key] = val;
-             }
+          Object.keys(mapped).forEach((key) => {
+            const val = (mapped as any)[key];
+            if (shouldKeepValue(val)) {
+              updates[key] = val;
+            }
           });
-          
+
+          if (mode === "sync") {
+            const syncQuantity = getSyncQuantityUpdate(hasIncomingQuantity, incomingQuantity);
+            if (syncQuantity !== undefined) {
+              updates.quantity = syncQuantity;
+            } else {
+              delete updates.quantity;
+            }
+          }
+
+          if (Object.keys(updates).length === 0) {
+            results.skipped++;
+            continue;
+          }
+
           await storage.updateBottle(existing.id, userId, updates);
+          results.updated++;
           results.updatedCount++;
 
         } else {
           // Create
           const mapToInsert = (v: any): InsertBottle => ({
-             userId,
-             externalKey: v.external_key,
-             producer: v.producer,
-             wine: v.wine,
-             vintage: v.vintage,
-             country: v.country,
-             region: v.region,
-             appellation: v.appellation,
-             color: normalizeColor(v.color),
-             type: normalizeType(v.type),
-             sizeMl: v.size_ml,
-             grapes: v.grapes,
-             abv: v.abv,
-             barcode: v.barcode,
-             windowStartYear: v.window_start_year,
-             peakStartYear: v.peak_start_year,
-             peakEndYear: v.peak_end_year,
-             windowEndYear: v.window_end_year,
-             windowSource: normalizeWindowSource(v.window_source),
-             confidence: normalizeConfidence(v.confidence),
-             servingTempC: v.serving_temp_c,
-             decanting: v.decanting,
-             priceMinEur: v.price_min_eur,
-             priceTypicalEur: v.price_typical_eur,
-             priceMaxEur: v.price_max_eur,
-             priceUpdatedAt: v.price_updated_at ? new Date(v.price_updated_at) : undefined,
-             priceSourcesJson: v.price_sources,
-             sourcesJson: v.sources,
-             legacyJson: legacyAll,
-             notes: v.notes,
-             quantity: v.quantity || 1,
-             location: normalizeLocation(v.location),
-             bin: v.bin
+            userId,
+            ...mapBaseToInsert(v),
+            quantity: getCreateQuantity(v.quantity),
           });
-          
+
           await storage.createBottle(mapToInsert(validated));
+          results.created++;
           results.importedCount++;
         }
 
@@ -511,6 +541,7 @@ export async function registerRoutes(
       }
     }
 
+    results.errorsCount = results.errors.length;
     res.json(results);
   });
 
