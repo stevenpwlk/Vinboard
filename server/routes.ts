@@ -53,6 +53,7 @@ export async function registerRoutes(
       q: req.query.q as string | undefined,
       color: req.query.color as string | undefined,
       confidence: req.query.confidence as string | undefined,
+      type: req.query.type as string | undefined,
       window_source: req.query.window_source as string | undefined,
       location: req.query.location as string | undefined,
     };
@@ -107,6 +108,12 @@ export async function registerRoutes(
       windowLabel: computed.windowLabel,
       peakLabel: computed.peakLabel,
     });
+  });
+
+  app.get(api.bottles.filters.path, authGuard, async (req, res) => {
+    const userId = getUserId(req);
+    const options = await storage.getBottleFilterOptions(userId);
+    res.json(options);
   });
 
   app.post(api.bottles.create.path, authGuard, async (req, res) => {
