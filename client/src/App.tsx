@@ -15,6 +15,7 @@ import BottleDetail from "@/pages/BottleDetail";
 import AddBottle from "@/pages/AddBottle";
 import Import from "@/pages/Import";
 import History from "@/pages/History";
+import Export from "@/pages/Export";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -59,6 +60,10 @@ function Router() {
       
       <Route path="/history">
         <ProtectedRoute component={History} />
+      </Route>
+
+      <Route path="/export">
+        <ProtectedRoute component={Export} />
       </Route>
       
       <Route component={NotFound} />

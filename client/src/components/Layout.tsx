@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { Home, Wine, History, LogOut, Upload, User as UserIcon } from "lucide-react";
+import { Home, Wine, History, LogOut, Upload, User as UserIcon, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { t } from "@/i18n";
 
@@ -18,6 +18,7 @@ export function Layout({ children }: LayoutProps) {
     { icon: Wine, label: t("nav.cellar"), href: "/bottles" },
     { icon: History, label: t("nav.history"), href: "/history" },
     { icon: Upload, label: t("nav.import"), href: "/import" },
+    { icon: Download, label: t("nav.export"), href: "/export" },
   ];
 
   return (

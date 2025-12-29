@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
-import { importBottleSchema, type InsertBottle } from "@shared/schema";
+import { importBottleSchema, type InsertBottle, type Bottle, type OpenedBottle } from "@shared/schema";
 import { normalizeLegacyImport } from "./import/legacy";
 import { computeBottleStatus } from "@shared/status";
 import {
@@ -61,6 +61,108 @@ export async function registerRoutes(
     windowSource: normalizeWindowSource(input.windowSource),
     location: normalizeLocation(input.location),
   });
+
+  const toTimestamp = (value: unknown) => {
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    if (typeof value === "string") {
+      return value;
+    }
+    return value ?? null;
+  };
+
+  const parseJsonValue = (value: unknown) => {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return value;
+      }
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  };
+
+  const mapBottleExport = (bottle: Bottle) => ({
+    id: bottle.id ?? null,
+    user_id: bottle.userId ?? null,
+    external_key: bottle.externalKey ?? null,
+    producer: bottle.producer ?? null,
+    wine: bottle.wine ?? null,
+    vintage: bottle.vintage ?? null,
+    country: bottle.country ?? null,
+    region: bottle.region ?? null,
+    appellation: bottle.appellation ?? null,
+    color: bottle.color ?? null,
+    type: bottle.type ?? null,
+    size_ml: bottle.sizeMl ?? null,
+    grapes: bottle.grapes ?? null,
+    abv: bottle.abv ?? null,
+    barcode: bottle.barcode ?? null,
+    window_start_year: bottle.windowStartYear ?? null,
+    peak_start_year: bottle.peakStartYear ?? null,
+    peak_end_year: bottle.peakEndYear ?? null,
+    window_end_year: bottle.windowEndYear ?? null,
+    window_source: bottle.windowSource ?? null,
+    confidence: bottle.confidence ?? null,
+    serving_temp_c: bottle.servingTempC ?? null,
+    decanting: bottle.decanting ?? null,
+    price_min_eur: bottle.priceMinEur ?? null,
+    price_typical_eur: bottle.priceTypicalEur ?? null,
+    price_max_eur: bottle.priceMaxEur ?? null,
+    price_updated_at: toTimestamp(bottle.priceUpdatedAt),
+    price_sources: parseJsonValue(bottle.priceSourcesJson),
+    sources: parseJsonValue(bottle.sourcesJson),
+    legacy_json: parseJsonValue(bottle.legacyJson),
+    notes: bottle.notes ?? null,
+    quantity: bottle.quantity ?? null,
+    location: bottle.location ?? null,
+    bin: bottle.bin ?? null,
+    created_at: toTimestamp(bottle.createdAt),
+    updated_at: toTimestamp(bottle.updatedAt),
+  });
+
+  const mapOpenedExport = (opened: OpenedBottle) => ({
+    id: opened.id ?? null,
+    user_id: opened.userId ?? null,
+    bottle_id: opened.bottleId ?? null,
+    external_key: opened.externalKey ?? null,
+    producer: opened.producer ?? null,
+    wine: opened.wine ?? null,
+    vintage: opened.vintage ?? null,
+    opened_at: toTimestamp(opened.openedAt),
+    quantity_opened: opened.quantityOpened ?? null,
+    tasting_notes: opened.tastingNotes ?? null,
+    rating_100: opened.rating100 ?? null,
+    created_at: toTimestamp(opened.createdAt),
+  });
+
+  const getExportTimestamp = () => {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(
+      now.getHours()
+    )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  };
+
+  const csvEscape = (value: unknown) => {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    const normalized =
+      typeof value === "object" ? JSON.stringify(value) : String(value);
+    if (/[",\n\r]/.test(normalized)) {
+      return `"${normalized.replace(/"/g, "\"\"")}"`;
+    }
+    return normalized;
+  };
 
   // --- BOTTLES ---
 
@@ -410,6 +512,99 @@ export async function registerRoutes(
     }
 
     res.json(results);
+  });
+
+  // --- EXPORT ---
+
+  app.get("/api/export.json", authGuard, async (req, res) => {
+    // TODO: secure export access with auth/permissions before enabling beyond local usage.
+    const userId = getUserId(req);
+    const [bottles, opened] = await Promise.all([
+      storage.getBottles(userId),
+      storage.getOpenedBottles(userId),
+    ]);
+    const exportPayload = {
+      schema_version: 1,
+      exported_at: new Date().toISOString(),
+      app: {
+        name: "Vinboard",
+        env: process.env.NODE_ENV ?? "unknown",
+      },
+      counts: {
+        bottles: bottles.length,
+        opened: opened.length,
+      },
+      bottles: bottles.map(mapBottleExport),
+      opened: opened.map(mapOpenedExport),
+    };
+    const filename = `vinboard_export_${getExportTimestamp()}.json`;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(JSON.stringify(exportPayload, null, 2));
+  });
+
+  app.get("/api/export.bottles.json", authGuard, async (req, res) => {
+    const userId = getUserId(req);
+    const bottles = await storage.getBottles(userId);
+    const exportPayload = bottles.map(mapBottleExport);
+    const filename = `vinboard_export_bottles_${getExportTimestamp()}.json`;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(JSON.stringify(exportPayload, null, 2));
+  });
+
+  app.get("/api/export.csv", authGuard, async (req, res) => {
+    const userId = getUserId(req);
+    const bottles = await storage.getBottles(userId);
+    const exportRows = bottles.map(mapBottleExport);
+    const headers = [
+      "id",
+      "user_id",
+      "external_key",
+      "producer",
+      "wine",
+      "vintage",
+      "country",
+      "region",
+      "appellation",
+      "color",
+      "type",
+      "size_ml",
+      "grapes",
+      "abv",
+      "barcode",
+      "window_start_year",
+      "peak_start_year",
+      "peak_end_year",
+      "window_end_year",
+      "window_source",
+      "confidence",
+      "serving_temp_c",
+      "decanting",
+      "price_min_eur",
+      "price_typical_eur",
+      "price_max_eur",
+      "price_updated_at",
+      "price_sources",
+      "sources",
+      "legacy_json",
+      "notes",
+      "quantity",
+      "location",
+      "bin",
+      "created_at",
+      "updated_at",
+    ];
+    const lines = [
+      headers.join(","),
+      ...exportRows.map((row) =>
+        headers.map((header) => csvEscape((row as Record<string, unknown>)[header])).join(",")
+      ),
+    ];
+    const filename = `vinboard_export_${getExportTimestamp()}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(lines.join("\n"));
   });
 
   // --- OPENED ---
