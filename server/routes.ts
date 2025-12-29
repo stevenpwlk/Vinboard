@@ -5,57 +5,147 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
 import { importBottleSchema, type InsertBottle } from "@shared/schema";
+import { normalizeLegacyImport } from "./import/legacy";
+import { computeBottleStatus } from "@shared/status";
+import crypto from "crypto";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
-  // 1. Setup Auth
-  await setupAuth(app);
-  registerAuthRoutes(app);
+  const authDisabled = process.env.AUTH_DISABLED !== "false";
+  const mockUser = {
+    id: "local-dev",
+    email: "local@vinboard",
+    name: "Local User",
+  };
+
+  if (authDisabled) {
+    app.use((req, _res, next) => {
+      (req as any).user = mockUser;
+      (req as any).session = { userId: mockUser.id };
+      next();
+    });
+
+    app.get("/api/auth/user", (_req, res) => {
+      res.json(mockUser);
+    });
+  } else {
+    await setupAuth(app);
+    registerAuthRoutes(app);
+  }
 
   // 2. Protect all API routes (except auth ones which are handled internally)
   // We can use a middleware for /api/* but we need to exclude /api/login, /api/callback, /api/logout
   // Ideally, apply isAuthenticated to specific routes or groups.
-  const protectedApi = [
-    api.bottles.list.path,
-    api.bottles.get.path.replace(':id', '*'), // Rough match for router middleware if needed, but easier to just add to handlers
-    api.bottles.create.path,
-    api.bottles.update.path.replace(':id', '*'),
-    api.bottles.delete.path.replace(':id', '*'),
-    api.bottles.import.path,
-    api.opened.list.path,
-    api.opened.create.path,
-    api.dashboard.stats.path
-  ];
+  const authGuard = authDisabled ? (_req: any, _res: any, next: any) => next() : isAuthenticated;
 
   // Helper to extract user ID safely
   const getUserId = (req: any) => {
-    return req.user?.claims?.sub;
+    return req.user?.id;
   };
 
   // --- BOTTLES ---
 
-  app.get(api.bottles.list.path, isAuthenticated, async (req, res) => {
+  app.get(api.bottles.list.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
-    const bottles = await storage.getBottles(userId);
+    const filters = {
+      q: req.query.q as string | undefined,
+      color: req.query.color as string | undefined,
+      confidence: req.query.confidence as string | undefined,
+      window_source: req.query.window_source as string | undefined,
+      location: req.query.location as string | undefined,
+    };
+    const statusFilter = req.query.status as string | undefined;
+    const sweetnessFilter = req.query.sweetness as string | undefined;
+
+    let bottles = await storage.getBottles(userId, filters);
+    const nowYear = new Date().getFullYear();
+    bottles = bottles.map((bottle) => {
+      const computed = computeBottleStatus(bottle, nowYear);
+      return {
+        ...bottle,
+        status: computed.status,
+        statusReason: computed.reason,
+        windowLabel: computed.windowLabel,
+        peakLabel: computed.peakLabel,
+      };
+    });
+
+    if (statusFilter) {
+      const readyStatuses = ["ready", "ready_before_peak", "ready_after_peak"];
+      bottles = bottles.filter((bottle: any) => {
+        if (statusFilter === "ready") {
+          return readyStatuses.includes(bottle.status);
+        }
+        return bottle.status === statusFilter;
+      });
+    }
+
+    if (sweetnessFilter) {
+      bottles = bottles.filter((bottle: any) => {
+        const legacySweetness = bottle.legacyJson?.sweetness;
+        const directSweetness = bottle.sweetness;
+        return (legacySweetness || directSweetness) === sweetnessFilter;
+      });
+    }
+
     res.json(bottles);
   });
 
-  app.get(api.bottles.get.path, isAuthenticated, async (req, res) => {
+  app.get(api.bottles.get.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     const bottle = await storage.getBottle(req.params.id, userId);
     if (!bottle) {
       return res.status(404).json({ message: "Bottle not found" });
     }
-    res.json(bottle);
+    const computed = computeBottleStatus(bottle);
+    res.json({
+      ...bottle,
+      status: computed.status,
+      statusReason: computed.reason,
+      windowLabel: computed.windowLabel,
+      peakLabel: computed.peakLabel,
+    });
   });
 
-  app.post(api.bottles.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.bottles.create.path, authGuard, async (req, res) => {
     try {
       const userId = getUserId(req);
-      const input = api.bottles.create.input.parse(req.body);
+      const addToExisting = Boolean(req.body?.addToExisting);
+      const externalKey =
+        req.body?.externalKey ||
+        req.body?.external_key ||
+        `manual_${crypto
+          .createHash("sha1")
+          .update(
+            [
+              req.body?.producer,
+              req.body?.wine,
+              req.body?.vintage,
+              req.body?.sizeMl,
+              req.body?.size_ml,
+            ]
+              .filter(Boolean)
+              .join("|")
+          )
+          .digest("hex")
+          .slice(0, 10)}`;
+      const input = api.bottles.create.input.parse({
+        ...req.body,
+        externalKey,
+      });
+
+      if (addToExisting) {
+        const existing = await storage.getBottleByExternalKey(input.externalKey, userId);
+        if (existing) {
+          const updated = await storage.updateBottle(existing.id, userId, {
+            quantity: (existing.quantity || 0) + (input.quantity || 1),
+          });
+          return res.status(200).json(updated);
+        }
+      }
+
       const bottle = await storage.createBottle({ ...input, userId });
       res.status(201).json(bottle);
     } catch (err) {
@@ -66,7 +156,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch(api.bottles.update.path, isAuthenticated, async (req, res) => {
+  app.patch(api.bottles.update.path, authGuard, async (req, res) => {
     try {
       const userId = getUserId(req);
       const input = api.bottles.update.input.parse(req.body);
@@ -83,18 +173,36 @@ export async function registerRoutes(
     }
   });
 
-  app.delete(api.bottles.delete.path, isAuthenticated, async (req, res) => {
+  app.delete(api.bottles.delete.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
+    const existing = await storage.getBottle(req.params.id, userId);
+    if (!existing) {
+      return res.status(404).json({ message: "Bottle not found" });
+    }
     await storage.deleteBottle(req.params.id, userId);
-    res.status(204).send();
+    res.json({ success: true });
+  });
+
+  app.post("/api/bottles/:id/delete", authGuard, async (req, res) => {
+    const userId = getUserId(req);
+    const existing = await storage.getBottle(req.params.id, userId);
+    if (!existing) {
+      return res.status(404).json({ message: "Bottle not found" });
+    }
+    await storage.deleteBottle(req.params.id, userId);
+    res.json({ success: true });
   });
 
   // --- IMPORT ---
 
-  app.post(api.bottles.import.path, isAuthenticated, async (req, res) => {
+  app.post(api.bottles.import.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     let items = req.body;
-    
+
+    if (items && Array.isArray(items.bottles)) {
+      items = items.bottles;
+    }
+
     // Normalize to array
     if (!Array.isArray(items)) {
       items = [items];
@@ -108,16 +216,32 @@ export async function registerRoutes(
 
     for (const item of items) {
       try {
+        let legacyAll: Record<string, any>;
+        try {
+          legacyAll = JSON.parse(JSON.stringify(item));
+        } catch {
+          legacyAll = { ...item };
+        }
+        const { normalizedItem } = normalizeLegacyImport(item);
+
         // Pre-processing / Alias mapping
         const processed = {
-          ...item,
-          price_updated_at: item.price_checked_date,
-          price_sources_json: item.price_sources,
-          sources_json: item.sources,
-          grapes: Array.isArray(item.grapes) ? item.grapes.join(", ") : item.grapes,
+          ...normalizedItem,
+          grapes: Array.isArray(normalizedItem.grapes)
+            ? normalizedItem.grapes.join(", ")
+            : normalizedItem.grapes,
+          legacy_json: legacyAll,
         };
 
-        const validated = importBottleSchema.parse(processed);
+        const validatedResult = importBottleSchema.safeParse(processed);
+        if (!validatedResult.success) {
+          results.errors.push({
+            externalKey: item.external_key || "unknown",
+            reason: validatedResult.error.errors[0]?.message || "Invalid data",
+          });
+          continue;
+        }
+        const validated = validatedResult.data;
 
         // Check if exists
         const existing = await storage.getBottleByExternalKey(validated.external_key, userId);
@@ -164,6 +288,7 @@ export async function registerRoutes(
              priceUpdatedAt: v.price_updated_at ? new Date(v.price_updated_at) : undefined,
              priceSourcesJson: v.price_sources,
              sourcesJson: v.sources,
+             legacyJson: legacyAll,
              notes: v.notes,
              quantity: newQuantity, // Explicitly calculated
              location: v.location,
@@ -218,6 +343,7 @@ export async function registerRoutes(
              priceUpdatedAt: v.price_updated_at ? new Date(v.price_updated_at) : undefined,
              priceSourcesJson: v.price_sources,
              sourcesJson: v.sources,
+             legacyJson: legacyAll,
              notes: v.notes,
              quantity: v.quantity || 1,
              location: v.location,
@@ -242,13 +368,13 @@ export async function registerRoutes(
 
   // --- OPENED ---
 
-  app.get(api.opened.list.path, isAuthenticated, async (req, res) => {
+  app.get(api.opened.list.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     const opened = await storage.getOpenedBottles(userId);
     res.json(opened);
   });
 
-  app.post(api.opened.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.opened.create.path, authGuard, async (req, res) => {
     try {
       const userId = getUserId(req);
       const input = api.opened.create.input.parse(req.body);
@@ -264,7 +390,7 @@ export async function registerRoutes(
 
   // --- DASHBOARD ---
 
-  app.get(api.dashboard.stats.path, isAuthenticated, async (req, res) => {
+  app.get(api.dashboard.stats.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     const stats = await storage.getDashboardStats(userId);
     res.json(stats);

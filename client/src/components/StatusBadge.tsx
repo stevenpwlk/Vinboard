@@ -8,9 +8,14 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const getStatusConfig = (s: string) => {
     switch (s?.toLowerCase()) {
-      case "open_now":
       case "ready":
         return { label: "Ready", className: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+      case "ready_before_peak":
+        return { label: "Ready (before peak)", className: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+      case "ready_after_peak":
+        return { label: "After peak", className: "bg-amber-100 text-amber-800 border-amber-200" };
+      case "peak":
+        return { label: "Peak", className: "bg-purple-100 text-purple-800 border-purple-200" };
       case "drink_soon":
       case "drink fast":
         return { label: "Drink Soon", className: "bg-orange-100 text-orange-800 border-orange-200" };

@@ -26,10 +26,13 @@ export const api = {
       method: 'GET' as const,
       path: '/api/bottles',
       input: z.object({
-        search: z.string().optional(),
-        color: z.string().optional(),
+        q: z.string().optional(),
         status: z.string().optional(),
         confidence: z.string().optional(),
+        window_source: z.string().optional(),
+        color: z.string().optional(),
+        sweetness: z.string().optional(),
+        location: z.string().optional(),
         sort: z.string().optional(),
       }).optional(),
       responses: {
@@ -47,8 +50,9 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/bottles',
-      input: insertBottleSchema,
+      input: insertBottleSchema.omit({ userId: true }),
       responses: {
+        200: z.custom<typeof bottles.$inferSelect>(),
         201: z.custom<typeof bottles.$inferSelect>(),
         400: errorSchemas.validation,
       },
@@ -56,7 +60,7 @@ export const api = {
     update: {
       method: 'PATCH' as const, // Using PATCH for partial updates
       path: '/api/bottles/:id',
-      input: insertBottleSchema.partial(),
+      input: insertBottleSchema.omit({ userId: true }).partial(),
       responses: {
         200: z.custom<typeof bottles.$inferSelect>(),
         400: errorSchemas.validation,
@@ -67,7 +71,7 @@ export const api = {
       method: 'DELETE' as const,
       path: '/api/bottles/:id',
       responses: {
-        204: z.void(),
+        200: z.object({ success: z.boolean() }),
         404: errorSchemas.notFound,
       },
     },
@@ -122,6 +126,7 @@ export const api = {
       responses: {
         200: z.object({
           openNow: z.number(),
+          peak: z.number(),
           drinkSoon: z.number(),
           wait: z.number(),
           possiblyPast: z.number(),

@@ -3,21 +3,23 @@ import { useBottle, useUpdateBottle } from "@/hooks/use-bottles";
 import { useCreateOpenedBottle } from "@/hooks/use-opened";
 import { WineIcon } from "@/components/WineIcon";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ArrowLeft, Minus, Plus, Wine, Calendar, Tag, MapPin, DollarSign, Info } from "lucide-react";
+import { ArrowLeft, Minus, Plus, Wine, Calendar, MapPin, DollarSign, Info, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { z } from "zod";
-
-// Reusing status logic again - simplified
-const getStatus = (bottle: any): string => {
-  const currentYear = new Date().getFullYear();
-  const start = bottle.windowStartYear;
-  const end = bottle.windowEndYear;
-  if (!start || !end) return "to_verify";
-  if (currentYear < start) return "wait";
-  if (currentYear <= end) return "open_now";
-  return "possibly_past";
-};
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { computeBottleStatus } from "@shared/status";
+import { useDeleteBottle } from "@/hooks/use-bottles";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function BottleDetail() {
   const [, params] = useRoute("/bottles/:id");
@@ -28,6 +30,7 @@ export default function BottleDetail() {
   const { data: bottle, isLoading } = useBottle(id);
   const updateMutation = useUpdateBottle();
   const openMutation = useCreateOpenedBottle();
+  const deleteBottle = useDeleteBottle();
   
   const [isOpening, setIsOpening] = useState(false);
 
@@ -84,14 +87,51 @@ export default function BottleDetail() {
     updateMutation.mutate({ id: bottle.id, quantity: next });
   };
 
+  const handleDelete = async () => {
+    try {
+      await deleteBottle.mutateAsync(bottle.id);
+      toast({ title: "Bottle deleted", description: "The bottle was removed." });
+      setLocation("/bottles");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete bottle.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const computedStatus = computeBottleStatus(bottle);
+
   return (
     <div className="max-w-3xl mx-auto animate-in-fade space-y-6">
-      <button 
-        onClick={() => window.history.back()} 
-        className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back
-      </button>
+      <div className="flex items-center justify-between">
+        <button 
+          onClick={() => window.history.back()} 
+          className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back
+        </button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button className="flex items-center gap-2 text-sm text-red-600 hover:text-red-700">
+              <Trash2 className="w-4 h-4" /> Delete bottle
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this bottle?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently remove the bottle and any history entries.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
 
       {/* Header Card */}
       <div className="bg-card rounded-2xl border border-border shadow-sm p-6 md:p-8 relative overflow-hidden">
@@ -107,7 +147,7 @@ export default function BottleDetail() {
             
             <div className="flex-1 space-y-2">
                <div className="flex flex-wrap gap-2 mb-2">
-                 <StatusBadge status={getStatus(bottle)} />
+                 <StatusBadge status={(bottle as any).status || computedStatus.status} />
                  <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded-full text-xs font-medium uppercase tracking-wider">
                    {bottle.type || "Unknown Type"}
                  </span>
@@ -196,7 +236,7 @@ export default function BottleDetail() {
               <DetailRow label="Source" value={bottle.windowSource} />
               <div className="pt-2">
                  <div className="text-xs text-muted-foreground mb-1">Status</div>
-                 <StatusBadge status={getStatus(bottle)} />
+                 <StatusBadge status={(bottle as any).status || computedStatus.status} />
               </div>
             </div>
           </section>
@@ -222,6 +262,23 @@ export default function BottleDetail() {
           </section>
         </div>
       </div>
+
+      <section className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+        <Accordion type="single" collapsible>
+          <AccordionItem value="legacy">
+            <AccordionTrigger>Legacy data</AccordionTrigger>
+            <AccordionContent>
+              {bottle.legacyJson ? (
+                <pre className="text-xs whitespace-pre-wrap rounded-lg bg-muted/40 p-4 border border-border/60">
+                  {JSON.stringify(bottle.legacyJson, null, 2)}
+                </pre>
+              ) : (
+                <p className="text-sm text-muted-foreground">No legacy data available.</p>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </section>
     </div>
   );
 }

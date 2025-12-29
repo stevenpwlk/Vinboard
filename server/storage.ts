@@ -10,7 +10,8 @@ import {
   type UpdateOpenedBottleRequest,
   type DashboardStats
 } from "@shared/schema";
-import { eq, and, sql, desc, asc } from "drizzle-orm";
+import { eq, and, desc, ilike, or } from "drizzle-orm";
+import { computeBottleStatus } from "@shared/status";
 
 export interface IStorage {
   // Bottles
@@ -34,12 +35,45 @@ export class DatabaseStorage implements IStorage {
   // --- Bottles ---
 
   async getBottles(userId: string, filters?: any): Promise<Bottle[]> {
-    let query = db.select().from(bottles).where(eq(bottles.userId, userId));
-    
-    // Add filtering logic here if needed based on `filters` object
-    // For now, returning all for the user
-    
-    return await query.orderBy(desc(bottles.createdAt));
+    const conditions = [eq(bottles.userId, userId)];
+
+    if (filters?.q) {
+      const term = `%${filters.q}%`;
+      conditions.push(
+        or(
+          ilike(bottles.producer, term),
+          ilike(bottles.wine, term),
+          ilike(bottles.appellation, term),
+          ilike(bottles.region, term),
+          ilike(bottles.country, term),
+          ilike(bottles.vintage, term),
+          ilike(bottles.barcode, term),
+          ilike(bottles.externalKey, term)
+        )
+      );
+    }
+
+    if (filters?.color) {
+      conditions.push(eq(bottles.color, filters.color));
+    }
+
+    if (filters?.confidence) {
+      conditions.push(eq(bottles.confidence, filters.confidence));
+    }
+
+    if (filters?.window_source) {
+      conditions.push(eq(bottles.windowSource, filters.window_source));
+    }
+
+    if (filters?.location) {
+      conditions.push(eq(bottles.location, filters.location));
+    }
+
+    return await db
+      .select()
+      .from(bottles)
+      .where(and(...conditions))
+      .orderBy(desc(bottles.createdAt));
   }
 
   async getBottle(id: string, userId: string): Promise<Bottle | undefined> {
@@ -73,6 +107,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteBottle(id: string, userId: string): Promise<void> {
+    await db
+      .delete(openedBottles)
+      .where(and(eq(openedBottles.bottleId, id), eq(openedBottles.userId, userId)));
     await db
       .delete(bottles)
       .where(and(eq(bottles.id, id), eq(bottles.userId, userId)));
@@ -117,6 +154,7 @@ export class DatabaseStorage implements IStorage {
 
     const stats: DashboardStats = {
       openNow: 0,
+      peak: 0,
       drinkSoon: 0,
       wait: 0,
       possiblyPast: 0,
@@ -124,35 +162,34 @@ export class DatabaseStorage implements IStorage {
     };
 
     for (const b of allBottles) {
-      if (b.quantity && b.quantity > 0) {
-        if (!b.windowStartYear || !b.windowEndYear) {
+      if (!b.quantity || b.quantity <= 0) {
+        continue;
+      }
+      const { status } = computeBottleStatus(b, year);
+      switch (status) {
+        case "to_verify":
           stats.toVerify++;
-        } else if (year < b.windowStartYear) {
+          break;
+        case "wait":
           stats.wait++;
-        } else if (b.peakStartYear && b.peakEndYear && year >= b.peakStartYear && year <= b.peakEndYear) {
-          stats.openNow++; // "At peak"
-        } else if (year <= b.windowEndYear) {
-           if (b.windowEndYear - year <= 1) {
-             stats.drinkSoon++; // "Drink fast"
-           } else {
-             stats.openNow++; // "Ready" -> mapping to openNow for simplicity or split?
-             // Prompt says: "Open now (status: ready/peak/drink fast)"
-             // So Ready, Peak, Drink Fast all contribute to "Open Now"?
-             // Actually, prompt has separate cards: "Open now", "Drink soon", "Wait", "Possibly past", "To verify"
-             // And "Status logic":
-             // - If window_end - today <= 1 => "Drink fast"
-             // - Else "Ready"
-             // Let's align stats to cards requested:
-             // Open now (Ready/Peak/Drink Fast - maybe Drink Fast is separate?)
-             // Let's assume:
-             // Open Now = Ready + Peak
-             // Drink Soon = Drink Fast (<= 1 year left)
-             // Wait = < window start
-             // Possibly Past = > window end
-          }
-        } else {
+          break;
+        case "peak":
+          stats.peak++;
+          stats.openNow++;
+          break;
+        case "drink_soon":
+          stats.drinkSoon++;
+          break;
+        case "ready":
+        case "ready_before_peak":
+        case "ready_after_peak":
+          stats.openNow++;
+          break;
+        case "possibly_past":
           stats.possiblyPast++;
-        }
+          break;
+        default:
+          stats.openNow++;
       }
     }
     

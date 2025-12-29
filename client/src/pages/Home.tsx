@@ -1,32 +1,9 @@
 import { useDashboardStats, useBottles } from "@/hooks/use-bottles";
 import { Link } from "wouter";
 import { BottleCard } from "@/components/BottleCard";
-import { ArrowRight, Clock, CheckCircle2, AlertCircle, Hourglass } from "lucide-react";
+import { ArrowRight, Clock, CheckCircle2, AlertCircle, Hourglass, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-// Calculate status helper (simple frontend version matching backend logic ideally)
-// We'll rely on backend status logic if possible, or replicate here. 
-// For now, let's assume the bottles returned don't have a computed 'status' field in schema 
-// unless we enriched it. The schema has `Bottle` type which is raw DB.
-// Let's implement basic status logic here for display if needed, or better yet,
-// usually the backend list endpoint should ideally return enriched data.
-// Based on the prompt, logic is: "Wait": today < window_start, etc.
-// I will implement a helper function to replicate this logic for the UI.
-
-const getStatus = (bottle: any): string => {
-  const currentYear = new Date().getFullYear();
-  const start = bottle.windowStartYear;
-  const end = bottle.windowEndYear;
-  const peakStart = bottle.peakStartYear;
-  const peakEnd = bottle.peakEndYear;
-
-  if (!start || !end) return "to_verify";
-  if (currentYear < start) return "wait";
-  if (peakStart && peakEnd && currentYear >= peakStart && currentYear <= peakEnd) return "open_now"; // At peak
-  if (currentYear <= end && (end - currentYear <= 1)) return "drink_soon";
-  if (currentYear <= end) return "open_now"; // Ready
-  return "possibly_past";
-};
+import { computeBottleStatus } from "@shared/status";
 
 function StatCard({ 
   label, 
@@ -66,7 +43,7 @@ export default function Home() {
   
   // Fetch a few 'Drink Soon' or 'Open Now' bottles for the quick list
   // Ideally we'd filter this query, but useBottles takes filters
-  const { data: readyBottles, isLoading: bottlesLoading } = useBottles({ status: "open_now", sort: "vintage" });
+  const { data: readyBottles, isLoading: bottlesLoading } = useBottles({ status: "ready", sort: "vintage" });
 
   if (statsLoading) {
     return <div className="p-8 flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
@@ -79,13 +56,20 @@ export default function Home() {
         <p className="text-muted-foreground">Your cellar at a glance.</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard 
           label="Ready" 
           value={stats?.openNow || 0} 
           icon={CheckCircle2} 
           colorClass="bg-emerald-100 text-emerald-700"
-          href="/bottles?status=open_now"
+          href="/bottles?status=ready"
+        />
+        <StatCard 
+          label="Peak" 
+          value={stats?.peak || 0} 
+          icon={Star} 
+          colorClass="bg-purple-100 text-purple-700"
+          href="/bottles?status=peak"
         />
         <StatCard 
           label="Drink Soon" 
@@ -113,7 +97,7 @@ export default function Home() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-display font-bold">Ready to Drink</h3>
-          <Link href="/bottles?status=open_now" className="text-sm font-medium text-primary hover:underline flex items-center gap-1">
+          <Link href="/bottles?status=ready" className="text-sm font-medium text-primary hover:underline flex items-center gap-1">
             View all <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
@@ -123,7 +107,11 @@ export default function Home() {
         ) : readyBottles && readyBottles.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {readyBottles.slice(0, 3).map((bottle) => (
-              <BottleCard key={bottle.id} bottle={bottle} status={getStatus(bottle)} />
+              <BottleCard
+                key={bottle.id}
+                bottle={bottle}
+                status={(bottle as any).status || computeBottleStatus(bottle).status}
+              />
             ))}
           </div>
         ) : (

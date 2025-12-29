@@ -1,49 +1,105 @@
-import { useState } from "react";
-import { useBottles, type BottlesFilters } from "@/hooks/use-bottles";
+import { useEffect, useState } from "react";
+import { useBottles, type BottlesFilters, useDeleteBottle } from "@/hooks/use-bottles";
 import { BottleCard } from "@/components/BottleCard";
-import { Search, Filter, X } from "lucide-react";
+import { Search, Filter } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { computeBottleStatus } from "@shared/status";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
-// Status logic replication (see Home.tsx note)
-const getStatus = (bottle: any): string => {
-  const currentYear = new Date().getFullYear();
-  const start = bottle.windowStartYear;
-  const end = bottle.windowEndYear;
-  const peakStart = bottle.peakStartYear;
-  const peakEnd = bottle.peakEndYear;
+const filterKeys: Array<keyof BottlesFilters> = [
+  "q",
+  "status",
+  "confidence",
+  "window_source",
+  "color",
+  "sweetness",
+  "location",
+  "sort",
+];
 
-  if (!start || !end) return "to_verify";
-  if (currentYear < start) return "wait";
-  if (peakStart && peakEnd && currentYear >= peakStart && currentYear <= peakEnd) return "open_now";
-  if (currentYear <= end && (end - currentYear <= 1)) return "drink_soon";
-  if (currentYear <= end) return "open_now";
-  return "possibly_past";
+const getFiltersFromSearch = (search: string): BottlesFilters => {
+  const params = new URLSearchParams(search);
+  const filters: BottlesFilters = {};
+  filterKeys.forEach((key) => {
+    const value = params.get(key);
+    if (value) {
+      filters[key] = value;
+    }
+  });
+  return filters;
+};
+
+const buildSearchFromFilters = (filters: BottlesFilters) => {
+  const params = new URLSearchParams();
+  filterKeys.forEach((key) => {
+    const value = filters[key];
+    if (value) {
+      params.set(key, value);
+    }
+  });
+  const queryString = params.toString();
+  return queryString ? `?${queryString}` : "";
 };
 
 export default function Bottles() {
-  const [location] = useLocation();
-  // Parse initial query params roughly
-  const searchParams = new URLSearchParams(window.location.search);
-  
-  const [filters, setFilters] = useState<BottlesFilters>({
-    search: searchParams.get("search") || "",
-    status: searchParams.get("status") || "",
-    color: searchParams.get("color") || "",
-  });
+  const [location, setLocation] = useLocation();
+  const { toast } = useToast();
+  const deleteBottle = useDeleteBottle();
+
+  const [filters, setFilters] = useState<BottlesFilters>(() =>
+    getFiltersFromSearch(window.location.search)
+  );
+
+  useEffect(() => {
+    const search = location.split("?")[1] ? `?${location.split("?")[1]}` : "";
+    setFilters(getFiltersFromSearch(search));
+  }, [location]);
 
   const { data: bottles, isLoading } = useBottles(filters);
 
-  // Simple debounce for search input could be added, but relying on state for now
+  const applyFilters = (nextFilters: BottlesFilters) => {
+    setFilters(nextFilters);
+    setLocation(`/bottles${buildSearchFromFilters(nextFilters)}`, { replace: true });
+  };
+
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFilters(prev => ({ ...prev, search: e.target.value }));
+    applyFilters({ ...filters, q: e.target.value });
   };
 
   const toggleFilter = (key: keyof BottlesFilters, value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: prev[key] === value ? "" : value
-    }));
+    applyFilters({
+      ...filters,
+      [key]: filters[key] === value ? "" : value,
+    });
+  };
+
+  const clearFilters = () => {
+    applyFilters({});
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteBottle.mutateAsync(id);
+      toast({ title: "Bottle deleted", description: "The bottle was removed." });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete bottle.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -66,14 +122,14 @@ export default function Bottles() {
             type="text"
             placeholder="Search wine, producer, vintage..."
             className="input-styled pl-10"
-            value={filters.search}
+            value={filters.q || ""}
             onChange={handleSearch}
           />
         </div>
 
         {/* Filters */}
         <div className="flex flex-wrap gap-2">
-          {["Red", "White", "Sparkling", "Rose", "Fortified"].map(color => (
+          {["red", "white", "sparkling", "rose", "fortified"].map(color => (
             <button
               key={color}
               onClick={() => toggleFilter("color", color)}
@@ -88,7 +144,7 @@ export default function Bottles() {
             </button>
           ))}
           <div className="w-px h-6 bg-border mx-1 self-center hidden sm:block" />
-          {["open_now", "drink_soon", "wait"].map(status => (
+          {["ready", "peak", "drink_soon", "wait", "possibly_past"].map(status => (
              <button
               key={status}
               onClick={() => toggleFilter("status", status)}
@@ -103,6 +159,36 @@ export default function Bottles() {
             </button>
           ))}
         </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <input
+            type="text"
+            placeholder="Confidence"
+            className="input-styled"
+            value={filters.confidence || ""}
+            onChange={(event) => applyFilters({ ...filters, confidence: event.target.value })}
+          />
+          <input
+            type="text"
+            placeholder="Window source"
+            className="input-styled"
+            value={filters.window_source || ""}
+            onChange={(event) => applyFilters({ ...filters, window_source: event.target.value })}
+          />
+          <input
+            type="text"
+            placeholder="Location"
+            className="input-styled"
+            value={filters.location || ""}
+            onChange={(event) => applyFilters({ ...filters, location: event.target.value })}
+          />
+          <input
+            type="text"
+            placeholder="Sweetness"
+            className="input-styled"
+            value={filters.sweetness || ""}
+            onChange={(event) => applyFilters({ ...filters, sweetness: event.target.value })}
+          />
+        </div>
       </div>
 
       {isLoading ? (
@@ -113,9 +199,41 @@ export default function Bottles() {
         </div>
       ) : bottles && bottles.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {bottles.map((bottle) => (
-            <BottleCard key={bottle.id} bottle={bottle} status={getStatus(bottle)} />
-          ))}
+          {bottles.map((bottle) => {
+            const computed = computeBottleStatus(bottle);
+            const status = (bottle as any).status || computed.status;
+            return (
+              <div key={bottle.id} className="relative">
+                <BottleCard bottle={bottle} status={status} />
+                <div className="absolute right-3 top-3">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <button
+                        className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this bottle?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently remove the bottle and any history entries.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDelete(bottle.id)}>
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-20">
@@ -125,7 +243,7 @@ export default function Bottles() {
           <h3 className="text-xl font-medium text-foreground">No bottles found</h3>
           <p className="text-muted-foreground mt-2">Try adjusting your filters or search terms.</p>
           <button 
-            onClick={() => setFilters({})}
+            onClick={clearFilters}
             className="mt-4 text-primary font-medium hover:underline"
           >
             Clear all filters
