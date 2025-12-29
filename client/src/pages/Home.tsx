@@ -4,6 +4,7 @@ import { BottleCard } from "@/components/BottleCard";
 import { ArrowRight, Clock, CheckCircle2, AlertCircle, Hourglass, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { computeBottleStatus } from "@shared/status";
+import { mapStatusLabel, t } from "@/i18n";
 
 function StatCard({ 
   label, 
@@ -52,41 +53,41 @@ export default function Home() {
   return (
     <div className="space-y-8 animate-in-fade">
       <div>
-        <h2 className="text-3xl font-display font-bold text-foreground">Overview</h2>
-        <p className="text-muted-foreground">Your cellar at a glance.</p>
+        <h2 className="text-3xl font-display font-bold text-foreground">{t("home.overview")}</h2>
+        <p className="text-muted-foreground">{t("home.subtitle")}</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard 
-          label="Ready" 
+          label={mapStatusLabel("ready")} 
           value={stats?.openNow || 0} 
           icon={CheckCircle2} 
           colorClass="bg-emerald-100 text-emerald-700"
           href="/bottles?status=ready"
         />
         <StatCard 
-          label="Peak" 
+          label={mapStatusLabel("peak")} 
           value={stats?.peak || 0} 
           icon={Star} 
           colorClass="bg-purple-100 text-purple-700"
           href="/bottles?status=peak"
         />
         <StatCard 
-          label="Drink Soon" 
+          label={mapStatusLabel("drink_soon")} 
           value={stats?.drinkSoon || 0} 
           icon={AlertCircle} 
           colorClass="bg-orange-100 text-orange-700"
           href="/bottles?status=drink_soon"
         />
         <StatCard 
-          label="Wait" 
+          label={mapStatusLabel("wait")} 
           value={stats?.wait || 0} 
           icon={Hourglass} 
           colorClass="bg-blue-100 text-blue-700"
           href="/bottles?status=wait"
         />
         <StatCard 
-          label="Past Peak" 
+          label={mapStatusLabel("possibly_past")} 
           value={stats?.possiblyPast || 0} 
           icon={Clock} 
           colorClass="bg-red-100 text-red-700"
@@ -96,9 +97,9 @@ export default function Home() {
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-xl font-display font-bold">Ready to Drink</h3>
+          <h3 className="text-xl font-display font-bold">{t("home.readyToDrink")}</h3>
           <Link href="/bottles?status=ready" className="text-sm font-medium text-primary hover:underline flex items-center gap-1">
-            View all <ArrowRight className="w-4 h-4" />
+            {t("home.viewAll")} <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
@@ -116,8 +117,8 @@ export default function Home() {
           </div>
         ) : (
           <div className="text-center py-12 bg-card rounded-2xl border border-dashed border-border">
-            <p className="text-muted-foreground">No bottles currently marked as ready.</p>
-            <Link href="/import" className="text-primary font-medium mt-2 inline-block">Import bottles</Link>
+            <p className="text-muted-foreground">{t("home.noReady")}</p>
+            <Link href="/import" className="text-primary font-medium mt-2 inline-block">{t("home.importPrompt")}</Link>
           </div>
         )}
       </div>

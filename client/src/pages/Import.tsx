@@ -3,6 +3,7 @@ import { useImportBottles } from "@/hooks/use-bottles";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, CheckCircle, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
+import { t } from "@/i18n";
 
 export default function Import() {
   const [jsonInput, setJsonInput] = useState("");
@@ -20,14 +21,14 @@ export default function Import() {
         errors: res.errors
       });
       toast({
-        title: "Import Complete",
-        description: `Successfully processed ${res.importedCount + res.updatedCount} bottles.`,
+        title: t("import.toastSuccess"),
+        description: t("import.toastSuccessDesc", { count: res.importedCount + res.updatedCount }),
       });
     } catch (err: any) {
       console.error(err);
       toast({
-        title: "Import Failed",
-        description: err.message || "Invalid JSON format or server error.",
+        title: t("import.toastError"),
+        description: err.message || t("import.toastErrorDesc"),
         variant: "destructive"
       });
     }
@@ -36,15 +37,15 @@ export default function Import() {
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in-fade">
       <div>
-        <h2 className="text-3xl font-display font-bold text-foreground">Import Bottles</h2>
-        <p className="text-muted-foreground">Add bottles in bulk via JSON.</p>
+        <h2 className="text-3xl font-display font-bold text-foreground">{t("import.title")}</h2>
+        <p className="text-muted-foreground">{t("import.subtitle")}</p>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-8">
         <div className="space-y-4">
           <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
             <h3 className="font-medium mb-4 flex items-center gap-2">
-              <Upload className="w-4 h-4 text-primary" /> JSON Input
+              <Upload className="w-4 h-4 text-primary" /> {t("import.input")}
             </h3>
             <textarea
               className="w-full h-96 p-4 font-mono text-xs bg-muted/30 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
@@ -58,7 +59,7 @@ export default function Import() {
                 disabled={isPending || !jsonInput}
                 className="px-6 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl shadow-lg hover:bg-primary/90 transition-all disabled:opacity-50"
               >
-                {isPending ? "Importing..." : "Process Import"}
+                {isPending ? t("import.processing") : t("import.process")}
               </button>
             </div>
           </div>
@@ -66,24 +67,24 @@ export default function Import() {
 
         <div className="space-y-4">
           <div className="bg-card rounded-2xl border border-border p-6 shadow-sm h-full">
-            <h3 className="font-medium mb-4">Results</h3>
+            <h3 className="font-medium mb-4">{t("import.results")}</h3>
             {result ? (
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-emerald-50 text-emerald-800 p-4 rounded-xl border border-emerald-100 text-center">
                     <div className="text-2xl font-bold">{result.imported}</div>
-                    <div className="text-xs font-medium uppercase tracking-wide opacity-80">New</div>
+                    <div className="text-xs font-medium uppercase tracking-wide opacity-80">{t("import.new")}</div>
                   </div>
                   <div className="bg-blue-50 text-blue-800 p-4 rounded-xl border border-blue-100 text-center">
                     <div className="text-2xl font-bold">{result.updated}</div>
-                    <div className="text-xs font-medium uppercase tracking-wide opacity-80">Updated</div>
+                    <div className="text-xs font-medium uppercase tracking-wide opacity-80">{t("import.updated")}</div>
                   </div>
                 </div>
 
                 {result.errors.length > 0 ? (
                   <div className="space-y-2">
                     <h4 className="text-sm font-semibold text-destructive flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4" /> Errors ({result.errors.length})
+                      <AlertTriangle className="w-4 h-4" /> {t("import.errors")} ({result.errors.length})
                     </h4>
                     <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
                       {result.errors.map((err, i) => (
@@ -97,23 +98,23 @@ export default function Import() {
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-emerald-600">
                     <CheckCircle className="w-12 h-12 mb-2" />
-                    <p className="font-medium">All items processed successfully!</p>
+                    <p className="font-medium">{t("import.successAll")}</p>
                   </div>
                 )}
                 
                 <div className="flex justify-center pt-4">
                   <Link href="/bottles" className="text-primary hover:underline text-sm font-medium">
-                    View Cellar
+                    {t("import.viewCellar")}
                   </Link>
                 </div>
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8 text-center border-2 border-dashed border-border/50 rounded-xl">
                 <Upload className="w-8 h-8 mb-4 opacity-50" />
-                <p className="text-sm">Paste JSON data on the left to begin.</p>
+                <p className="text-sm">{t("import.empty")}</p>
                 <p className="text-xs mt-2 opacity-70">
-                  Required: external_key<br/>
-                  Optional: producer, wine, vintage, etc.
+                  {t("import.required")}<br/>
+                  {t("import.optional")}
                 </p>
               </div>
             )}

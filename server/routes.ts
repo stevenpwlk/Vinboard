@@ -7,6 +7,14 @@ import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integra
 import { importBottleSchema, type InsertBottle } from "@shared/schema";
 import { normalizeLegacyImport } from "./import/legacy";
 import { computeBottleStatus } from "@shared/status";
+import {
+  normalizeColor,
+  normalizeConfidence,
+  normalizeLocation,
+  normalizeSweetness,
+  normalizeType,
+  normalizeWindowSource,
+} from "@shared/normalize";
 import crypto from "crypto";
 
 export async function registerRoutes(
@@ -45,19 +53,29 @@ export async function registerRoutes(
     return req.user?.id;
   };
 
+  const normalizeBottleInput = (input: Partial<InsertBottle>) => ({
+    ...input,
+    color: normalizeColor(input.color),
+    type: normalizeType(input.type),
+    confidence: normalizeConfidence(input.confidence),
+    windowSource: normalizeWindowSource(input.windowSource),
+    location: normalizeLocation(input.location),
+  });
+
   // --- BOTTLES ---
 
   app.get(api.bottles.list.path, authGuard, async (req, res) => {
     const userId = getUserId(req);
     const filters = {
       q: req.query.q as string | undefined,
-      color: req.query.color as string | undefined,
-      confidence: req.query.confidence as string | undefined,
-      window_source: req.query.window_source as string | undefined,
-      location: req.query.location as string | undefined,
     };
     const statusFilter = req.query.status as string | undefined;
-    const sweetnessFilter = req.query.sweetness as string | undefined;
+    const sweetnessFilter = normalizeSweetness(req.query.sweetness);
+    const colorFilter = normalizeColor(req.query.color);
+    const typeFilter = normalizeType(req.query.type);
+    const confidenceFilter = normalizeConfidence(req.query.confidence);
+    const windowSourceFilter = normalizeWindowSource(req.query.window_source);
+    const locationFilter = normalizeLocation(req.query.location);
 
     let bottles = await storage.getBottles(userId, filters);
     const nowYear = new Date().getFullYear();
@@ -84,10 +102,30 @@ export async function registerRoutes(
 
     if (sweetnessFilter) {
       bottles = bottles.filter((bottle: any) => {
-        const legacySweetness = bottle.legacyJson?.sweetness;
-        const directSweetness = bottle.sweetness;
+        const legacySweetness = normalizeSweetness(bottle.legacyJson?.sweetness);
+        const directSweetness = normalizeSweetness(bottle.sweetness);
         return (legacySweetness || directSweetness) === sweetnessFilter;
       });
+    }
+
+    if (colorFilter) {
+      bottles = bottles.filter((bottle) => normalizeColor(bottle.color) === colorFilter);
+    }
+
+    if (typeFilter) {
+      bottles = bottles.filter((bottle) => normalizeType(bottle.type) === typeFilter);
+    }
+
+    if (confidenceFilter) {
+      bottles = bottles.filter((bottle) => normalizeConfidence(bottle.confidence) === confidenceFilter);
+    }
+
+    if (windowSourceFilter) {
+      bottles = bottles.filter((bottle) => normalizeWindowSource(bottle.windowSource) === windowSourceFilter);
+    }
+
+    if (locationFilter) {
+      bottles = bottles.filter((bottle) => normalizeLocation(bottle.location) === locationFilter);
     }
 
     res.json(bottles);
@@ -107,6 +145,12 @@ export async function registerRoutes(
       windowLabel: computed.windowLabel,
       peakLabel: computed.peakLabel,
     });
+  });
+
+  app.get(api.bottles.filters.path, authGuard, async (req, res) => {
+    const userId = getUserId(req);
+    const options = await storage.getBottleFilterOptions(userId);
+    res.json(options);
   });
 
   app.post(api.bottles.create.path, authGuard, async (req, res) => {
@@ -135,9 +179,10 @@ export async function registerRoutes(
         ...req.body,
         externalKey,
       });
+      const normalizedInput = normalizeBottleInput(input);
 
       if (addToExisting) {
-        const existing = await storage.getBottleByExternalKey(input.externalKey, userId);
+        const existing = await storage.getBottleByExternalKey(normalizedInput.externalKey, userId);
         if (existing) {
           const updated = await storage.updateBottle(existing.id, userId, {
             quantity: (existing.quantity || 0) + (input.quantity || 1),
@@ -146,7 +191,7 @@ export async function registerRoutes(
         }
       }
 
-      const bottle = await storage.createBottle({ ...input, userId });
+      const bottle = await storage.createBottle({ ...normalizedInput, userId });
       res.status(201).json(bottle);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -160,7 +205,8 @@ export async function registerRoutes(
     try {
       const userId = getUserId(req);
       const input = api.bottles.update.input.parse(req.body);
-      const updated = await storage.updateBottle(req.params.id, userId, input);
+      const normalizedInput = normalizeBottleInput(input);
+      const updated = await storage.updateBottle(req.params.id, userId, normalizedInput);
       if (!updated) {
         return res.status(404).json({ message: "Bottle not found" });
       }
@@ -268,8 +314,8 @@ export async function registerRoutes(
              country: v.country,
              region: v.region,
              appellation: v.appellation,
-             color: v.color,
-             type: v.type,
+             color: normalizeColor(v.color),
+             type: normalizeType(v.type),
              sizeMl: v.size_ml,
              grapes: v.grapes,
              abv: v.abv,
@@ -278,8 +324,8 @@ export async function registerRoutes(
              peakStartYear: v.peak_start_year,
              peakEndYear: v.peak_end_year,
              windowEndYear: v.window_end_year,
-             windowSource: v.window_source,
-             confidence: v.confidence,
+             windowSource: normalizeWindowSource(v.window_source),
+             confidence: normalizeConfidence(v.confidence),
              servingTempC: v.serving_temp_c,
              decanting: v.decanting,
              priceMinEur: v.price_min_eur,
@@ -291,7 +337,7 @@ export async function registerRoutes(
              legacyJson: legacyAll,
              notes: v.notes,
              quantity: newQuantity, // Explicitly calculated
-             location: v.location,
+             location: normalizeLocation(v.location),
              bin: v.bin
           });
 
@@ -323,8 +369,8 @@ export async function registerRoutes(
              country: v.country,
              region: v.region,
              appellation: v.appellation,
-             color: v.color,
-             type: v.type,
+             color: normalizeColor(v.color),
+             type: normalizeType(v.type),
              sizeMl: v.size_ml,
              grapes: v.grapes,
              abv: v.abv,
@@ -333,8 +379,8 @@ export async function registerRoutes(
              peakStartYear: v.peak_start_year,
              peakEndYear: v.peak_end_year,
              windowEndYear: v.window_end_year,
-             windowSource: v.window_source,
-             confidence: v.confidence,
+             windowSource: normalizeWindowSource(v.window_source),
+             confidence: normalizeConfidence(v.confidence),
              servingTempC: v.serving_temp_c,
              decanting: v.decanting,
              priceMinEur: v.price_min_eur,
@@ -346,7 +392,7 @@ export async function registerRoutes(
              legacyJson: legacyAll,
              notes: v.notes,
              quantity: v.quantity || 1,
-             location: v.location,
+             location: normalizeLocation(v.location),
              bin: v.bin
           });
           

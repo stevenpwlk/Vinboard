@@ -1,7 +1,9 @@
 import { useOpenedBottles } from "@/hooks/use-opened";
 import { WineIcon } from "@/components/WineIcon";
 import { format } from "date-fns";
+import { fr as frLocale } from "date-fns/locale";
 import { Star } from "lucide-react";
+import { t } from "@/i18n";
 
 export default function History() {
   const { data: opened, isLoading } = useOpenedBottles();
@@ -11,8 +13,8 @@ export default function History() {
   return (
     <div className="space-y-6 animate-in-fade">
       <div>
-        <h2 className="text-3xl font-display font-bold text-foreground">History</h2>
-        <p className="text-muted-foreground">Past enjoyments and tasting notes.</p>
+        <h2 className="text-3xl font-display font-bold text-foreground">{t("history.title")}</h2>
+        <p className="text-muted-foreground">{t("history.subtitle")}</p>
       </div>
 
       <div className="space-y-4">
@@ -28,13 +30,13 @@ export default function History() {
               <div className="flex-1">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className="font-display font-bold text-lg leading-tight">{item.wine || "Unknown Wine"}</h3>
+                    <h3 className="font-display font-bold text-lg leading-tight">{item.wine || t("history.unknownWine")}</h3>
                     <p className="text-muted-foreground">{item.producer} • <span className="text-foreground font-medium">{item.vintage}</span></p>
                   </div>
                   <div className="text-right">
-                    <span className="text-xs text-muted-foreground font-medium block uppercase tracking-wider mb-1">Opened</span>
+                    <span className="text-xs text-muted-foreground font-medium block uppercase tracking-wider mb-1">{t("history.opened")}</span>
                     <span className="text-sm font-medium">
-                      {item.openedAt ? format(new Date(item.openedAt), "MMM d, yyyy") : "Unknown date"}
+                      {item.openedAt ? format(new Date(item.openedAt), "d MMM yyyy", { locale: frLocale }) : t("history.unknownDate")}
                     </span>
                   </div>
                 </div>
@@ -46,7 +48,7 @@ export default function History() {
                     </div>
                   ) : (
                     <div className="flex-1 text-sm text-muted-foreground italic">
-                      No tasting notes added.
+                      {t("history.noNotes")}
                     </div>
                   )}
                   
@@ -63,7 +65,7 @@ export default function History() {
           ))
         ) : (
           <div className="text-center py-12 text-muted-foreground bg-card rounded-2xl border border-dashed border-border">
-            No history yet. Open a bottle to start your journal!
+            {t("history.empty")}
           </div>
         )}
       </div>

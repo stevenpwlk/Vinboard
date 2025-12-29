@@ -2,9 +2,9 @@ import { type Bottle } from "@shared/schema";
 import { Link } from "wouter";
 import { WineIcon } from "./WineIcon";
 import { StatusBadge } from "./StatusBadge";
-import { cn } from "@/lib/utils";
 import { MapPin, Calendar, Star } from "lucide-react";
 import { computeBottleStatus } from "@shared/status";
+import { mapTypeLabel, t } from "@/i18n";
 
 interface BottleCardProps {
   bottle: Bottle;
@@ -21,10 +21,10 @@ export function BottleCard({ bottle, status }: BottleCardProps) {
       <div className="wine-card p-4 relative h-full flex flex-col hover:-translate-y-1 transition-transform">
         <div className="flex justify-between items-start mb-3">
           <div className="flex items-center gap-3">
-            <WineIcon color={bottle.color} type={bottle.type} className="w-10 h-10" />
+            <WineIcon color={bottle.color} type={bottle.type} className="h-10 w-10 shrink-0" />
             <div>
               <h3 className="font-display font-semibold text-lg leading-tight group-hover:text-primary transition-colors">
-                {bottle.wine || "Unknown Wine"}
+                {bottle.wine || t("history.unknownWine")}
               </h3>
               <p className="text-sm text-muted-foreground">{bottle.producer}</p>
             </div>
@@ -34,7 +34,7 @@ export function BottleCard({ bottle, status }: BottleCardProps) {
               {bottle.vintage || "NV"}
             </span>
             <div className="bg-secondary text-secondary-foreground text-xs font-bold px-2 py-0.5 rounded-md">
-              Qty: {bottle.quantity}
+              {t("labels.quantityShort")}: {bottle.quantity}
             </div>
           </div>
         </div>
@@ -57,6 +57,7 @@ export function BottleCard({ bottle, status }: BottleCardProps) {
           
           <div className="flex items-center justify-between pt-3 border-t border-border/50">
             <StatusBadge status={status} />
+            <span className="sr-only">{mapTypeLabel(bottle.type)}</span>
             {windowLabel ? (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                 <Calendar className="w-3 h-3" />

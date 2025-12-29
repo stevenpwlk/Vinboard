@@ -8,6 +8,7 @@ export type BottlesFilters = {
   confidence?: string;
   window_source?: string;
   color?: string;
+  type?: string;
   sweetness?: string;
   location?: string;
   sort?: string;
@@ -157,6 +158,18 @@ export function useImportBottles() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.bottles.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.dashboard.stats.path] });
+    },
+  });
+}
+
+// GET /api/bottles/filters
+export function useBottleFilters() {
+  return useQuery({
+    queryKey: [api.bottles.filters.path],
+    queryFn: async () => {
+      const res = await fetch(api.bottles.filters.path, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch bottle filters");
+      return api.bottles.filters.responses[200].parse(await res.json());
     },
   });
 }

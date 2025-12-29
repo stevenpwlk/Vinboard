@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
-import { useBottles, type BottlesFilters, useDeleteBottle } from "@/hooks/use-bottles";
+import { useBottleFilters, useBottles, type BottlesFilters, useDeleteBottle } from "@/hooks/use-bottles";
 import { BottleCard } from "@/components/BottleCard";
 import { Search, Filter } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { computeBottleStatus } from "@shared/status";
 import { useToast } from "@/hooks/use-toast";
+import { mapColorLabel, mapStatusLabel, mapTypeLabel, mapConfidenceLabel, mapWindowSourceLabel, mapSweetnessLabel, t } from "@/i18n";
+import {
+  normalizeColor,
+  normalizeConfidence,
+  normalizeLocation,
+  normalizeSweetness,
+  normalizeType,
+  normalizeWindowSource,
+} from "@shared/normalize";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +33,7 @@ const filterKeys: Array<keyof BottlesFilters> = [
   "confidence",
   "window_source",
   "color",
+  "type",
   "sweetness",
   "location",
   "sort",
@@ -57,6 +67,7 @@ export default function Bottles() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const deleteBottle = useDeleteBottle();
+  const { data: filterOptions } = useBottleFilters();
 
   const [filters, setFilters] = useState<BottlesFilters>(() =>
     getFiltersFromSearch(window.location.search)
@@ -92,25 +103,95 @@ export default function Bottles() {
   const handleDelete = async (id: string) => {
     try {
       await deleteBottle.mutateAsync(id);
-      toast({ title: "Bottle deleted", description: "The bottle was removed." });
+      toast({ title: t("cellar.delete.success"), description: t("cellar.delete.successDesc") });
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to delete bottle.",
+        title: t("common.error"),
+        description: t("cellar.delete.error"),
         variant: "destructive",
       });
     }
   };
 
+  const buildOrderedOptions = (canonical: string[], dynamic: string[]) => {
+    const canonicalSet = new Set(canonical);
+    const extra = dynamic
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .filter((value, index, array) => array.indexOf(value) === index)
+      .filter((value) => !canonicalSet.has(value.toLowerCase()));
+    return [
+      ...canonical,
+      ...extra.sort((a, b) => a.localeCompare(b)),
+    ];
+  };
+
+  const colorOptions = buildOrderedOptions(
+    ["red", "white", "rose", "sparkling", "fortified", "orange", "sweet", "other"],
+    filterOptions?.colors ?? []
+  );
+
+  const typeOptions = buildOrderedOptions(
+    ["still", "sparkling", "fortified", "sweet", "other"],
+    filterOptions?.types ?? []
+  );
+
+  const statusOptions = ["ready", "peak", "drink_soon", "wait", "possibly_past", "to_verify"];
+  const normalizedFilters = {
+    color: normalizeColor(filters.color),
+    type: normalizeType(filters.type),
+    confidence: normalizeConfidence(filters.confidence),
+    windowSource: normalizeWindowSource(filters.window_source),
+    location: normalizeLocation(filters.location),
+    sweetness: normalizeSweetness(filters.sweetness),
+    status: filters.status || "",
+  };
+
+  const filteredBottles = bottles?.filter((bottle) => {
+    if (normalizedFilters.color && normalizeColor(bottle.color) !== normalizedFilters.color) {
+      return false;
+    }
+    if (normalizedFilters.type && normalizeType(bottle.type) !== normalizedFilters.type) {
+      return false;
+    }
+    if (normalizedFilters.confidence && normalizeConfidence(bottle.confidence) !== normalizedFilters.confidence) {
+      return false;
+    }
+    if (normalizedFilters.windowSource && normalizeWindowSource(bottle.windowSource) !== normalizedFilters.windowSource) {
+      return false;
+    }
+    if (normalizedFilters.location && normalizeLocation(bottle.location) !== normalizedFilters.location) {
+      return false;
+    }
+    if (normalizedFilters.sweetness) {
+      const legacySweetness = normalizeSweetness((bottle as any).legacyJson?.sweetness);
+      const directSweetness = normalizeSweetness((bottle as any).sweetness);
+      if ((legacySweetness || directSweetness) !== normalizedFilters.sweetness) {
+        return false;
+      }
+    }
+    if (normalizedFilters.status) {
+      const computed = computeBottleStatus(bottle);
+      const status = (bottle as any).status || computed.status;
+      const readyStatuses = ["ready", "ready_before_peak", "ready_after_peak"];
+      if (normalizedFilters.status === "ready") {
+        if (!readyStatuses.includes(status)) return false;
+      } else if (status !== normalizedFilters.status) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-6 animate-in-fade">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-display font-bold text-foreground">Cellar</h2>
-          <p className="text-muted-foreground">{bottles?.length || 0} bottles in collection</p>
+          <h2 className="text-3xl font-display font-bold text-foreground">{t("cellar.title")}</h2>
+          <p className="text-muted-foreground">{bottles?.length || 0} {t("cellar.count")}</p>
         </div>
         <Link href="/add" className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium shadow-lg hover:shadow-xl hover:bg-primary/90 transition-all">
-          Add Bottle
+          {t("common.addBottle")}
         </Link>
       </div>
 
@@ -120,7 +201,7 @@ export default function Bottles() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search wine, producer, vintage..."
+            placeholder={t("cellar.searchPlaceholder")}
             className="input-styled pl-10"
             value={filters.q || ""}
             onChange={handleSearch}
@@ -128,66 +209,108 @@ export default function Bottles() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-2">
-          {["red", "white", "sparkling", "rose", "fortified"].map(color => (
-            <button
-              key={color}
-              onClick={() => toggleFilter("color", color)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border",
-                filters.color === color
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background text-muted-foreground border-border hover:bg-muted"
-              )}
-            >
-              {color}
-            </button>
-          ))}
-          <div className="w-px h-6 bg-border mx-1 self-center hidden sm:block" />
-          {["ready", "peak", "drink_soon", "wait", "possibly_past"].map(status => (
-             <button
-              key={status}
-              onClick={() => toggleFilter("status", status)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border capitalize",
-                filters.status === status
-                  ? "bg-accent text-accent-foreground border-accent"
-                  : "bg-background text-muted-foreground border-border hover:bg-muted"
-              )}
-            >
-              {status.replace("_", " ")}
-            </button>
-          ))}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("cellar.filters.color")}</span>
+            {colorOptions.map((color) => (
+              <button
+                key={color}
+                onClick={() => toggleFilter("color", color)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border",
+                  filters.color === color
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-border hover:bg-muted"
+                )}
+              >
+                {mapColorLabel(color)}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("cellar.filters.type")}</span>
+            {typeOptions.map((type) => (
+              <button
+                key={type}
+                onClick={() => toggleFilter("type", type)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border",
+                  filters.type === type
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-border hover:bg-muted"
+                )}
+              >
+                {mapTypeLabel(type)}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("cellar.filters.status")}</span>
+            {statusOptions.map((status) => (
+              <button
+                key={status}
+                onClick={() => toggleFilter("status", status)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border",
+                  filters.status === status
+                    ? "bg-accent text-accent-foreground border-accent"
+                    : "bg-background text-muted-foreground border-border hover:bg-muted"
+                )}
+              >
+                {mapStatusLabel(status)}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
-          <input
-            type="text"
-            placeholder="Confidence"
+          <select
             className="input-styled"
             value={filters.confidence || ""}
             onChange={(event) => applyFilters({ ...filters, confidence: event.target.value })}
-          />
-          <input
-            type="text"
-            placeholder="Window source"
+          >
+            <option value="">{t("cellar.filters.confidence")}</option>
+            {(filterOptions?.confidences ?? []).map((confidence) => (
+              <option key={confidence} value={confidence}>
+                {mapConfidenceLabel(confidence)}
+              </option>
+            ))}
+          </select>
+          <select
             className="input-styled"
             value={filters.window_source || ""}
             onChange={(event) => applyFilters({ ...filters, window_source: event.target.value })}
-          />
-          <input
-            type="text"
-            placeholder="Location"
+          >
+            <option value="">{t("cellar.filters.windowSource")}</option>
+            {(filterOptions?.window_sources ?? []).map((source) => (
+              <option key={source} value={source}>
+                {mapWindowSourceLabel(source)}
+              </option>
+            ))}
+          </select>
+          <select
             className="input-styled"
             value={filters.location || ""}
             onChange={(event) => applyFilters({ ...filters, location: event.target.value })}
-          />
-          <input
-            type="text"
-            placeholder="Sweetness"
+          >
+            <option value="">{t("cellar.filters.location")}</option>
+            {(filterOptions?.locations ?? []).map((location) => (
+              <option key={location} value={location}>
+                {location}
+              </option>
+            ))}
+          </select>
+          <select
             className="input-styled"
             value={filters.sweetness || ""}
             onChange={(event) => applyFilters({ ...filters, sweetness: event.target.value })}
-          />
+          >
+            <option value="">{t("cellar.filters.sweetness")}</option>
+            {(filterOptions?.sweetnesses ?? []).map((sweetness) => (
+              <option key={sweetness} value={sweetness}>
+                {mapSweetnessLabel(sweetness)}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -197,9 +320,9 @@ export default function Bottles() {
             <div key={i} className="h-48 bg-card animate-pulse rounded-xl border border-border" />
           ))}
         </div>
-      ) : bottles && bottles.length > 0 ? (
+      ) : filteredBottles && filteredBottles.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {bottles.map((bottle) => {
+          {filteredBottles.map((bottle) => {
             const computed = computeBottleStatus(bottle);
             const status = (bottle as any).status || computed.status;
             return (
@@ -212,20 +335,18 @@ export default function Bottles() {
                         className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
                         type="button"
                       >
-                        Delete
+                        {t("common.delete")}
                       </button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Delete this bottle?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will permanently remove the bottle and any history entries.
-                        </AlertDialogDescription>
+                        <AlertDialogTitle>{t("cellar.delete.confirmTitle")}</AlertDialogTitle>
+                        <AlertDialogDescription>{t("cellar.delete.confirmDesc")}</AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                         <AlertDialogAction onClick={() => handleDelete(bottle.id)}>
-                          Delete
+                          {t("common.delete")}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -240,13 +361,13 @@ export default function Bottles() {
           <div className="inline-flex justify-center items-center w-16 h-16 rounded-full bg-muted mb-4">
             <Filter className="w-8 h-8 text-muted-foreground" />
           </div>
-          <h3 className="text-xl font-medium text-foreground">No bottles found</h3>
-          <p className="text-muted-foreground mt-2">Try adjusting your filters or search terms.</p>
+          <h3 className="text-xl font-medium text-foreground">{t("cellar.empty.title")}</h3>
+          <p className="text-muted-foreground mt-2">{t("cellar.empty.subtitle")}</p>
           <button 
             onClick={clearFilters}
             className="mt-4 text-primary font-medium hover:underline"
           >
-            Clear all filters
+            {t("common.clearAll")}
           </button>
         </div>
       )}
