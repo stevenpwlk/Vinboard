@@ -12,6 +12,14 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, ilike, or, asc, isNotNull, ne } from "drizzle-orm";
 import { computeBottleStatus } from "@shared/status";
+import {
+  normalizeColor,
+  normalizeConfidence,
+  normalizeLocation,
+  normalizeSweetness,
+  normalizeType,
+  normalizeWindowSource,
+} from "@shared/normalize";
 
 export interface IStorage {
   // Bottles
@@ -154,19 +162,25 @@ export class DatabaseStorage implements IStorage {
 
     const sweetnessSet = new Set<string>();
     legacyRows.forEach((row) => {
-      const sweetness = row.legacyJson?.sweetness;
-      if (typeof sweetness === "string" && sweetness.trim()) {
-        sweetnessSet.add(sweetness.trim());
-      }
+      const sweetness = normalizeSweetness(row.legacyJson?.sweetness);
+      if (sweetness) sweetnessSet.add(sweetness);
     });
 
+    const normalizeAndSort = (
+      values: string[],
+      normalizer: (value: unknown) => string | null
+    ) =>
+      Array.from(
+        new Set(values.map((value) => normalizer(value)).filter((value): value is string => Boolean(value)))
+      ).sort((a, b) => a.localeCompare(b));
+
     return {
-      colors,
-      types,
-      confidences,
-      window_sources: windowSources,
+      colors: normalizeAndSort(colors, normalizeColor),
+      types: normalizeAndSort(types, normalizeType),
+      confidences: normalizeAndSort(confidences, normalizeConfidence),
+      window_sources: normalizeAndSort(windowSources, normalizeWindowSource),
       sweetnesses: Array.from(sweetnessSet).sort((a, b) => a.localeCompare(b)),
-      locations,
+      locations: normalizeAndSort(locations, normalizeLocation),
     };
   }
 

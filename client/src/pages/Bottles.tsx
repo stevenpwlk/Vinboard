@@ -8,6 +8,14 @@ import { computeBottleStatus } from "@shared/status";
 import { useToast } from "@/hooks/use-toast";
 import { mapColorLabel, mapStatusLabel, mapTypeLabel, mapConfidenceLabel, mapWindowSourceLabel, mapSweetnessLabel, t } from "@/i18n";
 import {
+  normalizeColor,
+  normalizeConfidence,
+  normalizeLocation,
+  normalizeSweetness,
+  normalizeType,
+  normalizeWindowSource,
+} from "@shared/normalize";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -129,6 +137,51 @@ export default function Bottles() {
   );
 
   const statusOptions = ["ready", "peak", "drink_soon", "wait", "possibly_past", "to_verify"];
+  const normalizedFilters = {
+    color: normalizeColor(filters.color),
+    type: normalizeType(filters.type),
+    confidence: normalizeConfidence(filters.confidence),
+    windowSource: normalizeWindowSource(filters.window_source),
+    location: normalizeLocation(filters.location),
+    sweetness: normalizeSweetness(filters.sweetness),
+    status: filters.status || "",
+  };
+
+  const filteredBottles = bottles?.filter((bottle) => {
+    if (normalizedFilters.color && normalizeColor(bottle.color) !== normalizedFilters.color) {
+      return false;
+    }
+    if (normalizedFilters.type && normalizeType(bottle.type) !== normalizedFilters.type) {
+      return false;
+    }
+    if (normalizedFilters.confidence && normalizeConfidence(bottle.confidence) !== normalizedFilters.confidence) {
+      return false;
+    }
+    if (normalizedFilters.windowSource && normalizeWindowSource(bottle.windowSource) !== normalizedFilters.windowSource) {
+      return false;
+    }
+    if (normalizedFilters.location && normalizeLocation(bottle.location) !== normalizedFilters.location) {
+      return false;
+    }
+    if (normalizedFilters.sweetness) {
+      const legacySweetness = normalizeSweetness((bottle as any).legacyJson?.sweetness);
+      const directSweetness = normalizeSweetness((bottle as any).sweetness);
+      if ((legacySweetness || directSweetness) !== normalizedFilters.sweetness) {
+        return false;
+      }
+    }
+    if (normalizedFilters.status) {
+      const computed = computeBottleStatus(bottle);
+      const status = (bottle as any).status || computed.status;
+      const readyStatuses = ["ready", "ready_before_peak", "ready_after_peak"];
+      if (normalizedFilters.status === "ready") {
+        if (!readyStatuses.includes(status)) return false;
+      } else if (status !== normalizedFilters.status) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6 animate-in-fade">
@@ -267,9 +320,9 @@ export default function Bottles() {
             <div key={i} className="h-48 bg-card animate-pulse rounded-xl border border-border" />
           ))}
         </div>
-      ) : bottles && bottles.length > 0 ? (
+      ) : filteredBottles && filteredBottles.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {bottles.map((bottle) => {
+          {filteredBottles.map((bottle) => {
             const computed = computeBottleStatus(bottle);
             const status = (bottle as any).status || computed.status;
             return (
