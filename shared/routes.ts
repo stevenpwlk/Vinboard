@@ -82,6 +82,11 @@ export const api = {
       input: z.union([importBottleSchema, z.array(importBottleSchema)]),
       responses: {
         200: z.object({
+          mode: z.enum(["merge", "sync"]),
+          created: z.number(),
+          updated: z.number(),
+          skipped: z.number(),
+          errorsCount: z.number(),
           importedCount: z.number(),
           updatedCount: z.number(),
           errors: z.array(z.object({

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useImportBottles } from "@/hooks/use-bottles";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, CheckCircle, AlertTriangle } from "lucide-react";
@@ -10,11 +10,36 @@ export default function Import() {
   const { mutateAsync: importBottles, isPending } = useImportBottles();
   const { toast } = useToast();
   const [result, setResult] = useState<{ imported: number, updated: number, errors: any[] } | null>(null);
+  const [mode, setMode] = useState<"merge" | "sync">("merge");
+  const [modeTouched, setModeTouched] = useState(false);
+
+  const detectImportMode = (payload: unknown): "merge" | "sync" => {
+    if (!payload || Array.isArray(payload) || typeof payload !== "object") {
+      return "merge";
+    }
+    const candidate = payload as { schema_version?: unknown; bottles?: unknown };
+    if (candidate.schema_version !== undefined && Array.isArray(candidate.bottles)) {
+      return "sync";
+    }
+    return "merge";
+  };
+
+  useEffect(() => {
+    if (modeTouched || !jsonInput.trim()) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(jsonInput);
+      setMode(detectImportMode(parsed));
+    } catch {
+      return;
+    }
+  }, [jsonInput, modeTouched]);
 
   const handleImport = async () => {
     try {
       const parsed = JSON.parse(jsonInput);
-      const res = await importBottles(parsed);
+      const res = await importBottles({ data: parsed, mode });
       setResult({
         imported: res.importedCount,
         updated: res.updatedCount,
@@ -53,6 +78,21 @@ export default function Import() {
               value={jsonInput}
               onChange={(e) => setJsonInput(e.target.value)}
             />
+            <div className="mt-4 space-y-2">
+              <label className="text-sm font-medium text-foreground">{t("import.modeLabel")}</label>
+              <select
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                value={mode}
+                onChange={(e) => {
+                  setMode(e.target.value as "merge" | "sync");
+                  setModeTouched(true);
+                }}
+              >
+                <option value="merge">{t("import.modeMerge")}</option>
+                <option value="sync">{t("import.modeSync")}</option>
+              </select>
+              <p className="text-xs text-muted-foreground">{t("import.modeHint")}</p>
+            </div>
             <div className="mt-4 flex justify-end">
               <button
                 onClick={handleImport}

@@ -140,12 +140,19 @@ export function useDeleteBottle() {
 export function useImportBottles() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: ImportBottleInput | ImportBottleInput[]) => {
+    mutationFn: async ({
+      data,
+      mode,
+    }: {
+      data: ImportBottleInput | ImportBottleInput[];
+      mode?: "merge" | "sync";
+    }) => {
       // Validate locally first to catch simple errors before network
       const inputSchema = z.union([api.bottles.import.input, z.array(api.bottles.import.input)]);
       // Note: we skip strict local validation here because the backend handles robust parsing
-      
-      const res = await fetch(api.bottles.import.path, {
+
+      const modeQuery = mode ? `?mode=${encodeURIComponent(mode)}` : "";
+      const res = await fetch(`${api.bottles.import.path}${modeQuery}`, {
         method: api.bottles.import.method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
