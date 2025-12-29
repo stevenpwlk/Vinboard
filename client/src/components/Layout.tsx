@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Home, Wine, History, LogOut, Upload, User as UserIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 
 interface LayoutProps {
   children: ReactNode;
@@ -13,10 +14,10 @@ export function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuth();
 
   const navItems = [
-    { icon: Home, label: "Home", href: "/" },
-    { icon: Wine, label: "Cellar", href: "/bottles" },
-    { icon: History, label: "History", href: "/history" },
-    { icon: Upload, label: "Import", href: "/import" },
+    { icon: Home, label: t("nav.home"), href: "/" },
+    { icon: Wine, label: t("nav.cellar"), href: "/bottles" },
+    { icon: History, label: t("nav.history"), href: "/history" },
+    { icon: Upload, label: t("nav.import"), href: "/import" },
   ];
 
   return (
@@ -24,8 +25,8 @@ export function Layout({ children }: LayoutProps) {
       {/* Desktop Sidebar / Mobile Top Bar Placeholder */}
       <aside className="hidden md:flex flex-col w-64 bg-card border-r border-border h-screen sticky top-0">
         <div className="p-8">
-          <h1 className="text-3xl font-display font-bold text-primary">Vinboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">Cellar Manager</p>
+          <h1 className="text-3xl font-display font-bold text-primary">{t("app.name")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{t("app.tagline")}</p>
         </div>
 
         <nav className="flex-1 px-4 space-y-2">
@@ -51,12 +52,12 @@ export function Layout({ children }: LayoutProps) {
               {user?.firstName?.[0] || <UserIcon className="w-4 h-4" />}
             </div>
             <div className="flex-1 overflow-hidden">
-              <p className="text-sm font-medium truncate">{user?.firstName || 'User'}</p>
+              <p className="text-sm font-medium truncate">{user?.firstName || t("user.fallback")}</p>
             </div>
             <button 
               onClick={() => logout()}
               className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
-              title="Sign out"
+              title={t("auth.signOut")}
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -66,7 +67,7 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Mobile Top Bar */}
       <div className="md:hidden flex items-center justify-between p-4 bg-background border-b border-border sticky top-0 z-40">
-        <h1 className="text-xl font-display font-bold text-primary">Vinboard</h1>
+        <h1 className="text-xl font-display font-bold text-primary">{t("app.name")}</h1>
         <button 
           onClick={() => logout()}
           className="p-2 text-muted-foreground hover:text-primary"

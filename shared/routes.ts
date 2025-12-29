@@ -31,6 +31,7 @@ export const api = {
         confidence: z.string().optional(),
         window_source: z.string().optional(),
         color: z.string().optional(),
+        type: z.string().optional(),
         sweetness: z.string().optional(),
         location: z.string().optional(),
         sort: z.string().optional(),
@@ -90,6 +91,20 @@ export const api = {
         }),
         400: errorSchemas.validation
       }
+    },
+    filters: {
+      method: 'GET' as const,
+      path: '/api/bottles/filters',
+      responses: {
+        200: z.object({
+          colors: z.array(z.string()),
+          types: z.array(z.string()),
+          confidences: z.array(z.string()),
+          window_sources: z.array(z.string()),
+          sweetnesses: z.array(z.string()),
+          locations: z.array(z.string()),
+        }),
+      },
     }
   },
   opened: {

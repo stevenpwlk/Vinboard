@@ -10,7 +10,7 @@ import {
   type UpdateOpenedBottleRequest,
   type DashboardStats
 } from "@shared/schema";
-import { eq, and, desc, ilike, or } from "drizzle-orm";
+import { eq, and, desc, ilike, or, asc, isNotNull, ne } from "drizzle-orm";
 import { computeBottleStatus } from "@shared/status";
 
 export interface IStorage {
@@ -21,6 +21,14 @@ export interface IStorage {
   createBottle(bottle: InsertBottle): Promise<Bottle>;
   updateBottle(id: string, userId: string, updates: UpdateBottleRequest): Promise<Bottle | undefined>;
   deleteBottle(id: string, userId: string): Promise<void>;
+  getBottleFilterOptions(userId: string): Promise<{
+    colors: string[];
+    types: string[];
+    confidences: string[];
+    window_sources: string[];
+    sweetnesses: string[];
+    locations: string[];
+  }>;
   
   // Opened History
   getOpenedBottles(userId: string): Promise<OpenedBottle[]>;
@@ -59,6 +67,10 @@ export class DatabaseStorage implements IStorage {
 
     if (filters?.confidence) {
       conditions.push(eq(bottles.confidence, filters.confidence));
+    }
+
+    if (filters?.type) {
+      conditions.push(eq(bottles.type, filters.type));
     }
 
     if (filters?.window_source) {
@@ -113,6 +125,49 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(bottles)
       .where(and(eq(bottles.id, id), eq(bottles.userId, userId)));
+  }
+
+  async getBottleFilterOptions(userId: string) {
+    const baseCondition = eq(bottles.userId, userId);
+    const selectDistinctValues = async (column: any) => {
+      const rows = await db
+        .select({ value: column })
+        .from(bottles)
+        .where(and(baseCondition, isNotNull(column), ne(column, "")))
+        .groupBy(column)
+        .orderBy(asc(column));
+      return rows.map((row) => row.value as string);
+    };
+
+    const [colors, types, confidences, windowSources, locations] = await Promise.all([
+      selectDistinctValues(bottles.color),
+      selectDistinctValues(bottles.type),
+      selectDistinctValues(bottles.confidence),
+      selectDistinctValues(bottles.windowSource),
+      selectDistinctValues(bottles.location),
+    ]);
+
+    const legacyRows = await db
+      .select({ legacyJson: bottles.legacyJson })
+      .from(bottles)
+      .where(baseCondition);
+
+    const sweetnessSet = new Set<string>();
+    legacyRows.forEach((row) => {
+      const sweetness = row.legacyJson?.sweetness;
+      if (typeof sweetness === "string" && sweetness.trim()) {
+        sweetnessSet.add(sweetness.trim());
+      }
+    });
+
+    return {
+      colors,
+      types,
+      confidences,
+      window_sources: windowSources,
+      sweetnesses: Array.from(sweetnessSet).sort((a, b) => a.localeCompare(b)),
+      locations,
+    };
   }
 
   // --- Opened History ---

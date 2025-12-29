@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { computeBottleStatus } from "@shared/status";
 import { useDeleteBottle } from "@/hooks/use-bottles";
+import { mapTypeLabel, mapWindowSourceLabel, t } from "@/i18n";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +36,7 @@ export default function BottleDetail() {
   const [isOpening, setIsOpening] = useState(false);
 
   if (isLoading) return <div className="p-8 flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
-  if (!bottle) return <div className="p-8 text-center">Bottle not found</div>;
+  if (!bottle) return <div className="p-8 text-center">{t("details.notFound")}</div>;
 
   const handleOpenBottle = async () => {
     setIsOpening(true);
@@ -61,8 +62,8 @@ export default function BottleDetail() {
       });
 
       toast({
-        title: "Bottle Opened",
-        description: "Enjoy! Don't forget to add tasting notes.",
+        title: t("details.opened.title"),
+        description: t("details.opened.desc"),
       });
 
       if (newQty <= 0) {
@@ -71,8 +72,8 @@ export default function BottleDetail() {
     } catch (error) {
       console.error(error);
       toast({
-        title: "Error",
-        description: "Failed to process opening.",
+        title: t("common.error"),
+        description: t("details.opened.error"),
         variant: "destructive"
       });
     } finally {
@@ -90,12 +91,12 @@ export default function BottleDetail() {
   const handleDelete = async () => {
     try {
       await deleteBottle.mutateAsync(bottle.id);
-      toast({ title: "Bottle deleted", description: "The bottle was removed." });
+      toast({ title: t("details.delete.success"), description: t("cellar.delete.successDesc") });
       setLocation("/bottles");
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Failed to delete bottle.",
+        title: t("common.error"),
+        description: t("details.delete.error"),
         variant: "destructive",
       });
     }
@@ -110,24 +111,22 @@ export default function BottleDetail() {
           onClick={() => window.history.back()} 
           className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" /> Back
+          <ArrowLeft className="w-4 h-4" /> {t("common.back")}
         </button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <button className="flex items-center gap-2 text-sm text-red-600 hover:text-red-700">
-              <Trash2 className="w-4 h-4" /> Delete bottle
+              <Trash2 className="w-4 h-4" /> {t("details.deleteBottle")}
             </button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete this bottle?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently remove the bottle and any history entries.
-              </AlertDialogDescription>
+              <AlertDialogTitle>{t("cellar.delete.confirmTitle")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("cellar.delete.confirmDesc")}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete}>{t("common.delete")}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -149,7 +148,7 @@ export default function BottleDetail() {
                <div className="flex flex-wrap gap-2 mb-2">
                  <StatusBadge status={(bottle as any).status || computedStatus.status} />
                  <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded-full text-xs font-medium uppercase tracking-wider">
-                   {bottle.type || "Unknown Type"}
+                   {mapTypeLabel(bottle.type)}
                  </span>
                </div>
                <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground leading-tight">
@@ -159,7 +158,7 @@ export default function BottleDetail() {
             </div>
 
             <div className="flex-shrink-0 flex flex-col items-center justify-center bg-muted/30 rounded-xl p-4 border border-border/50 min-w-[100px]">
-               <span className="text-sm text-muted-foreground uppercase font-bold tracking-wider">Vintage</span>
+               <span className="text-sm text-muted-foreground uppercase font-bold tracking-wider">{t("details.vintage")}</span>
                <span className="text-3xl font-display font-bold text-primary">{bottle.vintage || "NV"}</span>
             </div>
           </div>
@@ -169,7 +168,7 @@ export default function BottleDetail() {
       {/* Action Bar */}
       <div className="bg-card rounded-xl border border-border p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-muted-foreground">In Stock:</span>
+          <span className="text-sm font-medium text-muted-foreground">{t("details.inStock")}:</span>
           <div className="flex items-center bg-background rounded-lg border border-border">
             <button 
               onClick={() => handleQuantityChange(-1)}
@@ -194,7 +193,7 @@ export default function BottleDetail() {
           className="w-full sm:w-auto px-6 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <Wine className="w-4 h-4" />
-          {isOpening ? "Opening..." : "Open Bottle"}
+          {isOpening ? t("common.opening") : t("details.openBottle")}
         </button>
       </div>
 
@@ -203,24 +202,24 @@ export default function BottleDetail() {
         <div className="space-y-6">
           <section className="bg-card rounded-2xl border border-border p-6 shadow-sm">
             <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-primary" /> Origin
+              <MapPin className="w-4 h-4 text-primary" /> {t("details.origin")}
             </h3>
             <div className="space-y-3">
-              <DetailRow label="Country" value={bottle.country} />
-              <DetailRow label="Region" value={bottle.region} />
-              <DetailRow label="Appellation" value={bottle.appellation} />
-              <DetailRow label="Grapes" value={bottle.grapes} />
+              <DetailRow label={t("details.country")} value={bottle.country} />
+              <DetailRow label={t("details.region")} value={bottle.region} />
+              <DetailRow label={t("details.appellation")} value={bottle.appellation} />
+              <DetailRow label={t("details.grapes")} value={bottle.grapes} />
             </div>
           </section>
 
           <section className="bg-card rounded-2xl border border-border p-6 shadow-sm">
             <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-primary" /> Valuation
+              <DollarSign className="w-4 h-4 text-primary" /> {t("details.valuation")}
             </h3>
             <div className="space-y-3">
-              <DetailRow label="Market Price" value={bottle.priceTypicalEur ? `€${bottle.priceTypicalEur}` : undefined} />
-              <DetailRow label="Min Price" value={bottle.priceMinEur ? `€${bottle.priceMinEur}` : undefined} />
-              <DetailRow label="Max Price" value={bottle.priceMaxEur ? `€${bottle.priceMaxEur}` : undefined} />
+              <DetailRow label={t("details.marketPrice")} value={bottle.priceTypicalEur ? `€${bottle.priceTypicalEur}` : undefined} />
+              <DetailRow label={t("details.minPrice")} value={bottle.priceMinEur ? `€${bottle.priceMinEur}` : undefined} />
+              <DetailRow label={t("details.maxPrice")} value={bottle.priceMaxEur ? `€${bottle.priceMaxEur}` : undefined} />
             </div>
           </section>
         </div>
@@ -228,14 +227,14 @@ export default function BottleDetail() {
         <div className="space-y-6">
           <section className="bg-card rounded-2xl border border-border p-6 shadow-sm">
              <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-primary" /> Drink Window
+              <Calendar className="w-4 h-4 text-primary" /> {t("details.window")}
             </h3>
             <div className="space-y-3">
-              <DetailRow label="Window" value={`${bottle.windowStartYear || "?"} - ${bottle.windowEndYear || "?"}`} />
-              <DetailRow label="Peak" value={`${bottle.peakStartYear || "?"} - ${bottle.peakEndYear || "?"}`} />
-              <DetailRow label="Source" value={bottle.windowSource} />
+              <DetailRow label={t("details.windowLabel")} value={`${bottle.windowStartYear || "?"} - ${bottle.windowEndYear || "?"}`} />
+              <DetailRow label={t("details.peakLabel")} value={`${bottle.peakStartYear || "?"} - ${bottle.peakEndYear || "?"}`} />
+              <DetailRow label={t("details.source")} value={mapWindowSourceLabel(bottle.windowSource)} />
               <div className="pt-2">
-                 <div className="text-xs text-muted-foreground mb-1">Status</div>
+                 <div className="text-xs text-muted-foreground mb-1">{t("common.status")}</div>
                  <StatusBadge status={(bottle as any).status || computedStatus.status} />
               </div>
             </div>
@@ -243,16 +242,16 @@ export default function BottleDetail() {
 
           <section className="bg-card rounded-2xl border border-border p-6 shadow-sm">
              <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
-              <Info className="w-4 h-4 text-primary" /> Details
+              <Info className="w-4 h-4 text-primary" /> {t("details.details")}
             </h3>
             <div className="space-y-3">
-               <DetailRow label="Alcohol" value={bottle.abv ? `${bottle.abv}%` : undefined} />
-               <DetailRow label="Size" value={bottle.sizeMl ? `${bottle.sizeMl}ml` : undefined} />
-               <DetailRow label="Location" value={bottle.location} />
-               <DetailRow label="Bin" value={bottle.bin} />
+               <DetailRow label={t("details.alcohol")} value={bottle.abv ? `${bottle.abv}%` : undefined} />
+               <DetailRow label={t("details.size")} value={bottle.sizeMl ? `${bottle.sizeMl}ml` : undefined} />
+               <DetailRow label={t("details.location")} value={bottle.location} />
+               <DetailRow label={t("details.bin")} value={bottle.bin} />
                {bottle.notes && (
                  <div className="pt-2">
-                   <div className="text-sm text-muted-foreground font-medium mb-1">Notes</div>
+                   <div className="text-sm text-muted-foreground font-medium mb-1">{t("details.notes")}</div>
                    <p className="text-sm bg-muted/30 p-3 rounded-lg border border-border/50 italic">
                      "{bottle.notes}"
                    </p>
@@ -266,14 +265,14 @@ export default function BottleDetail() {
       <section className="bg-card rounded-2xl border border-border p-6 shadow-sm">
         <Accordion type="single" collapsible>
           <AccordionItem value="legacy">
-            <AccordionTrigger>Legacy data</AccordionTrigger>
+            <AccordionTrigger>{t("details.legacy")}</AccordionTrigger>
             <AccordionContent>
               {bottle.legacyJson ? (
                 <pre className="text-xs whitespace-pre-wrap rounded-lg bg-muted/40 p-4 border border-border/60">
                   {JSON.stringify(bottle.legacyJson, null, 2)}
                 </pre>
               ) : (
-                <p className="text-sm text-muted-foreground">No legacy data available.</p>
+                <p className="text-sm text-muted-foreground">{t("details.legacy.empty")}</p>
               )}
             </AccordionContent>
           </AccordionItem>
